@@ -3,6 +3,7 @@ import http from 'http';
 import axios from 'axios';
 import { initDb, db } from './src/db';
 import app, { wss } from './src/server';
+import { maybeInitRepo } from './src/repo';
 
 const PORT = process.env.PORT || 3000;
 const DOMAIN = process.env.DOMAIN || 'localhost:3000';
@@ -28,6 +29,7 @@ async function pingRelay() {
 
 async function start() {
   await initDb(db);
+  await maybeInitRepo();
   
   const server = http.createServer(app);
 

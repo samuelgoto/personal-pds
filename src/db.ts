@@ -13,13 +13,6 @@ export const createDb = (url: string, authToken?: string) => {
 
 export async function initDb(client: Client) {
   await client.batch([
-    `CREATE TABLE IF NOT EXISTS account (
-      handle TEXT PRIMARY KEY,
-      password TEXT NOT NULL,
-      did TEXT NOT NULL,
-      signing_key TEXT NOT NULL,
-      root_cid TEXT
-    )`,
     `CREATE TABLE IF NOT EXISTS repo_blocks (
       cid TEXT PRIMARY KEY,
       block BLOB NOT NULL
@@ -40,6 +33,5 @@ export async function initDb(client: Client) {
   ], "write");
 }
 
-// Default initialization for production
 const defaultUrl = process.env.DATABASE_URL || 'file:local.db';
 db = createDb(defaultUrl, process.env.DATABASE_AUTH_TOKEN);

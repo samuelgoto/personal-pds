@@ -5,9 +5,10 @@ import app, { wss } from '../src/server';
 import { initDb, createDb, setDb } from '../src/db';
 import { sequencer } from '../src/sequencer';
 import * as crypto from '@atproto/crypto';
-import { TursoStorage, loadRepo } from '../src/repo';
+import { maybeInitRepo } from '../src/repo';
 import { WebSocket } from 'ws';
 import { Client } from '@libsql/client';
+import { formatDid } from '../src/util';
 
 const PORT = 3001;
 const HOST = `http://localhost:${PORT}`;
@@ -25,16 +26,13 @@ describe('PDS Local Tests', () => {
     setDb(testDb);
     await initDb(testDb);
 
-    const did = `did:web:localhost%3A${PORT}`;
     const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
     const privKey = await keypair.export();
-    const storage = new TursoStorage();
-    const repo = await loadRepo(storage, did, keypair, null);
+    process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
+    process.env.DOMAIN = `localhost:${PORT}`;
     
-    await testDb.execute({
-      sql: 'INSERT OR REPLACE INTO account (handle, password, did, signing_key, root_cid) VALUES (?, ?, ?, ?, ?)',
-      args: [HANDLE, PASSWORD, did, privKey, repo.cid.toString()]
-    });
+    // Auto-init via server logic
+    await maybeInitRepo();
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {
@@ -42,18 +40,14 @@ describe('PDS Local Tests', () => {
         wss.emit('connection', ws, request);
       });
     });
-    await new Promise<void>((resolve) => {
-        server.listen(PORT, resolve);
-    });
+    await new Promise<void>((resolve) => server.listen(PORT, resolve));
   });
 
   afterAll(async () => {
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-    });
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
   test('should create a session', async () => {
@@ -68,34 +62,17 @@ describe('PDS Local Tests', () => {
     await agent.login({ identifier: HANDLE, password: PASSWORD });
 
     const ws = new WebSocket(`${WS_HOST}/xrpc/com.atproto.sync.subscribeRepos`);
-    
-    await new Promise((resolve, reject) => {
-        ws.on('open', resolve);
-        ws.on('error', reject);
-    });
+    await new Promise((resolve, reject) => { ws.on('open', resolve); ws.on('error', reject); });
 
     const messagePromise = new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timeout waiting for firehose')), 5000);
-      ws.on('message', (data) => {
-        clearTimeout(timeout);
-        resolve(data);
-      });
-      ws.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
+      const timeout = setTimeout(() => reject(new Error('Timeout')), 5000);
+      ws.on('message', (data) => { clearTimeout(timeout); resolve(data); });
     });
-
-    const record = {
-      $type: 'app.bsky.feed.post',
-      text: 'Firehose test!',
-      createdAt: new Date().toISOString(),
-    };
 
     await agent.api.com.atproto.repo.createRecord({
       repo: agent.session?.did!,
       collection: 'app.bsky.feed.post',
-      record,
+      record: { $type: 'app.bsky.feed.post', text: 'Firehose test!', createdAt: new Date().toISOString() },
     });
 
     const data = await messagePromise;
@@ -107,15 +84,13 @@ describe('PDS Local Tests', () => {
     const agent = new BskyAgent({ service: HOST });
     await agent.login({ identifier: HANDLE, password: PASSWORD });
 
-    // 1. Create
     const createRes = await agent.api.com.atproto.repo.createRecord({
       repo: agent.session?.did!,
       collection: 'app.bsky.feed.post',
-      record: { text: 'To be deleted', createdAt: new Date().toISOString() },
+      record: { $type: 'app.bsky.feed.post', text: 'To be deleted', createdAt: new Date().toISOString() },
     });
     const rkey = createRes.data.uri.split('/').pop()!;
 
-    // 2. Delete
     const deleteRes = await agent.api.com.atproto.repo.deleteRecord({
       repo: agent.session?.did!,
       collection: 'app.bsky.feed.post',
@@ -123,7 +98,6 @@ describe('PDS Local Tests', () => {
     });
     expect(deleteRes.success).toBe(true);
 
-    // 3. Verify
     await expect(agent.api.com.atproto.repo.getRecord({
       repo: agent.session?.did!,
       collection: 'app.bsky.feed.post',
@@ -135,18 +109,17 @@ describe('PDS Local Tests', () => {
     const agent = new BskyAgent({ service: HOST });
     const res = await agent.api.com.atproto.server.describeServer();
     expect(res.success).toBe(true);
-    expect(res.data.availableUserDomains).toBeDefined();
+    expect(res.data.did).toBeDefined();
   });
 
   test('should list records', async () => {
     const agent = new BskyAgent({ service: HOST });
     await agent.login({ identifier: HANDLE, password: PASSWORD });
 
-    // Ensure at least one record exists
     await agent.api.com.atproto.repo.createRecord({
         repo: agent.session?.did!,
         collection: 'app.bsky.feed.post',
-        record: { text: 'List test', createdAt: new Date().toISOString() },
+        record: { $type: 'app.bsky.feed.post', text: 'List test', createdAt: new Date().toISOString() },
     });
 
     const res = await agent.api.com.atproto.repo.listRecords({

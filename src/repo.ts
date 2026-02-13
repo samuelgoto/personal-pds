@@ -1,7 +1,10 @@
-import { Repo, ReadableBlockstore, RepoStorage, BlockMap, CommitData } from '@atproto/repo';
+import { Repo, ReadableBlockstore, RepoStorage, BlockMap, CommitData, blocksToCarFile } from '@atproto/repo';
 import { CID } from 'multiformats/cid';
 import { db } from './db';
 import * as crypto from '@atproto/crypto';
+import { cborDecode } from '@atproto/common';
+import { sequencer } from './sequencer';
+import { formatDid } from './util';
 
 export class TursoStorage extends ReadableBlockstore implements RepoStorage {
   blocks: BlockMap = new BlockMap();
@@ -86,4 +89,55 @@ export async function loadRepo(storage: TursoStorage, did: string, keypair: cryp
     return await Repo.createFromCommit(storage, commit);
   }
   return await Repo.load(storage, CID.parse(rootCid));
+}
+
+export const getRootCid = async (): Promise<string | null> => {
+  try {
+    const res = await db.execute({
+      sql: "SELECT event FROM sequencer WHERE type = 'commit' ORDER BY seq DESC LIMIT 1"
+    });
+    if (res.rows.length === 0) return null;
+    const event = cborDecode(new Uint8Array(res.rows[0].event as any)) as any;
+    return event.commit.toString();
+  } catch (e) {
+    return null; // Table might not exist yet
+  }
+};
+
+export async function maybeInitRepo() {
+  const rootCid = await getRootCid();
+  if (rootCid) return;
+
+  const privKeyHex = process.env.PRIVATE_KEY;
+  const domain = process.env.DOMAIN || 'localhost:3000';
+  
+  if (!privKeyHex) {
+    console.log('PRIVATE_KEY not found. Skipping repo auto-init.');
+    return;
+  }
+
+  const did = formatDid(domain);
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+
+  console.log(`Auto-initializing PDS repo for ${did}...`);
+  const storage = new TursoStorage();
+  const repo = await loadRepo(storage, did, keypair, null);
+  
+  const carBlocks = await storage.getRepoBlocks();
+  const blocks = await blocksToCarFile(repo.cid, carBlocks);
+
+  await sequencer.sequenceEvent({
+    type: 'commit',
+    did: did,
+    event: {
+      repo: did,
+      commit: repo.cid,
+      blocks: blocks,
+      rev: repo.commit.rev,
+      since: null,
+      ops: [],
+      time: new Date().toISOString(),
+    }
+  });
+  console.log(`Repo auto-initialized successfully. Root CID: ${repo.cid.toString()}`);
 }
