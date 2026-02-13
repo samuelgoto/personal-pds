@@ -37,5 +37,12 @@ export async function initDb(client) {
   ], "write");
 }
 
-const defaultUrl = process.env.DATABASE_URL || 'file:local.db';
-db = createDb(defaultUrl, process.env.DATABASE_AUTH_TOKEN);
+const defaultUrl = process.env.DATABASE_URL;
+const authToken = process.env.DATABASE_AUTH_TOKEN;
+
+if (process.env.VERCEL && (!defaultUrl || defaultUrl.startsWith('file:'))) {
+  throw new Error('DATABASE_URL must be a remote Turso URL (libsql:// or https://) when running on Vercel.');
+}
+
+db = createDb(defaultUrl || 'file:local.db', authToken);
+
