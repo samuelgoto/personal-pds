@@ -89,10 +89,16 @@ const getSingleUser = async (req) => {
 
 const auth = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'AuthenticationRequired' });
+  if (!authHeader) {
+    console.log(`Auth failed: No Authorization header for ${req.url}`);
+    return res.status(401).json({ error: 'AuthenticationRequired' });
+  }
   const token = authHeader.split(' ')[1];
   const payload = verifyToken(token);
-  if (!payload) return res.status(401).json({ error: 'InvalidToken' });
+  if (!payload) {
+    console.log(`Auth failed: Invalid token for ${req.url}`);
+    return res.status(401).json({ error: 'InvalidToken' });
+  }
   req.user = payload;
   next();
 };
