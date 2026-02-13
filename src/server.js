@@ -773,6 +773,30 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
   }
 });
 
+app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
+  try {
+    const { cursor } = req.query;
+    const startSeq = cursor ? parseInt(cursor, 10) : 0;
+
+    const result = await db.execute({
+      sql: 'SELECT * FROM sequencer WHERE seq > ? ORDER BY seq ASC LIMIT 100',
+      args: [startSeq]
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.ipld.car');
+    
+    // We send back the events as a stream of frames
+    for (const row of result.rows) {
+        const frame = sequencer.formatEvent(row);
+        res.write(frame);
+    }
+    
+    res.end();
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did } = req.query;
   const host = req.get('host') || 'localhost';
