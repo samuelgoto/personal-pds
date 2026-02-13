@@ -346,6 +346,39 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
   }
 });
 
+app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
+  try {
+    const actors = Array.isArray(req.query.actors) ? req.query.actors : [req.query.actors];
+    const user = await getSingleUser(req);
+    const profiles = [];
+
+    if (user) {
+        const storage = new TursoStorage();
+        const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+        const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+        const localProfile = {
+            did: user.did,
+            handle: user.handle,
+            displayName: profile?.displayName || user.handle,
+            description: profile?.description || '',
+            avatar: profile?.avatar,
+            banner: profile?.banner,
+            indexedAt: new Date().toISOString(),
+        };
+
+        for (const actor of actors) {
+            if (actor === user.did || actor === user.handle) {
+                profiles.push(localProfile);
+            }
+        }
+    }
+
+    res.json({ profiles });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
   try {
     const prefs = await getSystemMeta(`prefs:${req.user.sub}`);
