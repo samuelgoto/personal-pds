@@ -347,11 +347,25 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
 });
 
 app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
-  res.json({ preferences: [] });
+  try {
+    const prefs = await getSystemMeta(`prefs:${req.user.sub}`);
+    res.json({ preferences: prefs ? JSON.parse(prefs) : [] });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
 });
 
 app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
-  res.json({});
+  try {
+    const { preferences } = req.body;
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+      args: [`prefs:${req.user.sub}`, JSON.stringify(preferences)]
+    });
+    res.json({});
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
 });
 
 app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res) => {
