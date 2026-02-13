@@ -2,16 +2,10 @@ import { db } from './db.js';
 import { cborEncode } from '@atproto/common';
 import { WebSocket } from 'ws';
 
-export type FirehoseEvent = {
-  type: 'commit' | 'identity' | 'account';
-  did: string;
-  event: any;
-};
-
 class Sequencer {
-  private clients: Set<WebSocket> = new Set();
+  clients = new Set();
 
-  addClient(ws: WebSocket, cursor?: number) {
+  addClient(ws, cursor) {
     this.clients.add(ws);
     ws.on('close', () => this.clients.delete(ws));
     
@@ -20,7 +14,7 @@ class Sequencer {
     }
   }
 
-  private async backfill(ws: WebSocket, cursor: number) {
+  async backfill(ws, cursor) {
     const res = await db.execute({
       sql: 'SELECT * FROM sequencer WHERE seq > ? ORDER BY seq ASC',
       args: [cursor]
@@ -30,7 +24,7 @@ class Sequencer {
     }
   }
 
-  async sequenceEvent(evt: FirehoseEvent) {
+  async sequenceEvent(evt) {
     const time = new Date().toISOString();
     const encoded = cborEncode(evt.event);
     
@@ -39,7 +33,7 @@ class Sequencer {
       args: [evt.did, evt.type, Buffer.from(encoded), time]
     });
     
-    const seq = res.rows[0].seq as number;
+    const seq = res.rows[0].seq;
     const fullEvent = this.formatEvent({
         seq,
         type: evt.type,
@@ -61,16 +55,8 @@ class Sequencer {
     this.clients.clear();
   }
 
-  private formatEvent(row: any) {
-    // ATProto firehose events are DAG-CBOR encoded frames: [header, body]
-    // Header: { op: 1, t: '#commit' | '#identity' ... }
-    // Body: The event object itself
+  formatEvent(row) {
     const header = { op: 1, t: `#${row.type}` };
-    const body = { ...cborEncode(row.event as any), seq: row.seq, time: row.time }; // This is simplified
-    
-    // Actually, for a real firehose we should use the exact framing.
-    // For now, let's just send a simple JSON or CBOR-encoded object.
-    // Relays expect: [CBOR(header), CBOR(body)]
     return Buffer.concat([
         Buffer.from(cborEncode(header)),
         Buffer.from(row.event)

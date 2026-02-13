@@ -1,14 +1,13 @@
 import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
-import app, { wss } from '../src/server';
-import { initDb, createDb, setDb } from '../src/db';
-import { sequencer } from '../src/sequencer';
+import app, { wss } from '../src/server.js';
+import { initDb, createDb, setDb } from '../src/db.js';
+import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
-import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo';
+import { maybeInitRepo } from '../src/repo.js';
 import { readCarWithRoot } from '@atproto/repo';
-import { Client } from '@libsql/client';
-import { formatDid } from '../src/util';
+import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -20,10 +19,10 @@ const PORT = 3002;
 const HOST = `http://localhost:${PORT}`;
 
 describe('PDS Interoperability Tests', () => {
-  let server: http.Server;
-  let userDid: string;
-  let testDb: Client;
-  let dbPath: string;
+  let server;
+  let userDid;
+  let testDb;
+  let dbPath;
 
   beforeAll(async () => {
     process.env.PASSWORD = 'interop-pass';
@@ -47,14 +46,14 @@ describe('PDS Interoperability Tests', () => {
         wss.emit('connection', ws, request);
       });
     });
-    await new Promise<void>((resolve) => server.listen(PORT, resolve));
+    await new Promise((resolve) => server.listen(PORT, resolve));
   });
 
   afterAll(async () => {
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise((resolve) => server.close(() => resolve()));
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;
     const walPath = `${dbPath}-wal`;

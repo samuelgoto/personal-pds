@@ -2,15 +2,14 @@ import 'dotenv/config';
 import http from 'http';
 import nock from 'nock';
 import axios from 'axios';
-import app, { wss } from '../src/server';
-import { initDb, createDb, setDb } from '../src/db';
-import { sequencer } from '../src/sequencer';
+import app, { wss } from '../src/server.js';
+import { initDb, createDb, setDb } from '../src/db.js';
+import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
-import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo';
+import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import { readCarWithRoot } from '@atproto/repo';
-import { Client } from '@libsql/client';
-import { formatDid } from '../src/util';
+import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,10 +23,10 @@ const PDS_URL = `http://${HOST}`;
 const RELAY_URL = 'https://mock-relay.com';
 
 describe('Relay Interaction & Protocol Compliance', () => {
-  let server: http.Server;
-  let userDid: string;
-  let testDb: Client;
-  let dbPath: string;
+  let server;
+  let userDid;
+  let testDb;
+  let dbPath;
 
   beforeAll(async () => {
     process.env.PASSWORD = 'relay-pass';
@@ -51,14 +50,14 @@ describe('Relay Interaction & Protocol Compliance', () => {
         wss.emit('connection', ws, request);
       });
     });
-    await new Promise<void>((resolve) => server.listen(PORT, resolve));
+    await new Promise((resolve) => server.listen(PORT, resolve));
   });
 
   afterAll(async () => {
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise((resolve) => server.close(() => resolve()));
     nock.cleanAll();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;
@@ -90,8 +89,8 @@ describe('Relay Interaction & Protocol Compliance', () => {
     const ws = new WebSocket(`ws://${HOST}/xrpc/com.atproto.sync.subscribeRepos`);
     await new Promise((resolve) => ws.on('open', resolve));
 
-    const messagePromise = new Promise<Buffer>((resolve) => {
-      ws.on('message', (data: Buffer) => resolve(data));
+    const messagePromise = new Promise((resolve) => {
+      ws.on('message', (data) => resolve(data));
     });
 
     const loginRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.server.createSession`, {

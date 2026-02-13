@@ -2,14 +2,13 @@ import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
 import { BskyAgent } from '@atproto/api';
-import app, { wss } from '../src/server';
-import { initDb, createDb, setDb } from '../src/db';
-import { sequencer } from '../src/sequencer';
+import app, { wss } from '../src/server.js';
+import { initDb, createDb, setDb } from '../src/db.js';
+import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
-import { maybeInitRepo } from '../src/repo';
+import { maybeInitRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
-import { Client } from '@libsql/client';
-import { formatDid } from '../src/util';
+import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,9 +23,9 @@ const HANDLE = 'localhost.test';
 const PASSWORD = 'test-password-123';
 
 describe('PDS Local Tests', () => {
-  let server: http.Server;
-  let testDb: Client;
-  let dbPath: string;
+  let server;
+  let testDb;
+  let dbPath;
 
   beforeAll(async () => {
     process.env.PASSWORD = PASSWORD;
@@ -41,7 +40,6 @@ describe('PDS Local Tests', () => {
     process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
     process.env.DOMAIN = `localhost:${PORT}`;
     
-    // Auto-init via server logic
     await maybeInitRepo();
 
     server = http.createServer(app);
@@ -50,14 +48,14 @@ describe('PDS Local Tests', () => {
         wss.emit('connection', ws, request);
       });
     });
-    await new Promise<void>((resolve) => server.listen(PORT, resolve));
+    await new Promise((resolve) => server.listen(PORT, resolve));
   });
 
   afterAll(async () => {
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise<void>((resolve) => {
+    await new Promise((resolve) => {
         server.close(() => resolve());
     });
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
@@ -93,7 +91,7 @@ describe('PDS Local Tests', () => {
     });
 
     await agent.api.com.atproto.repo.createRecord({
-      repo: agent.session?.did!,
+      repo: agent.session?.did,
       collection: 'app.bsky.feed.post',
       record: { $type: 'app.bsky.feed.post', text: 'Firehose test!', createdAt: new Date().toISOString() },
     });
@@ -108,21 +106,21 @@ describe('PDS Local Tests', () => {
     await agent.login({ identifier: HANDLE, password: PASSWORD });
 
     const createRes = await agent.api.com.atproto.repo.createRecord({
-      repo: agent.session?.did!,
+      repo: agent.session?.did,
       collection: 'app.bsky.feed.post',
       record: { $type: 'app.bsky.feed.post', text: 'To be deleted', createdAt: new Date().toISOString() },
     });
-    const rkey = createRes.data.uri.split('/').pop()!;
+    const rkey = createRes.data.uri.split('/').pop();
 
     const deleteRes = await agent.api.com.atproto.repo.deleteRecord({
-      repo: agent.session?.did!,
+      repo: agent.session?.did,
       collection: 'app.bsky.feed.post',
       rkey: rkey,
     });
     expect(deleteRes.success).toBe(true);
 
     await expect(agent.api.com.atproto.repo.getRecord({
-      repo: agent.session?.did!,
+      repo: agent.session?.did,
       collection: 'app.bsky.feed.post',
       rkey: rkey,
     })).rejects.toThrow();
@@ -140,13 +138,13 @@ describe('PDS Local Tests', () => {
     await agent.login({ identifier: HANDLE, password: PASSWORD });
 
     await agent.api.com.atproto.repo.createRecord({
-        repo: agent.session?.did!,
+        repo: agent.session?.did,
         collection: 'app.bsky.feed.post',
         record: { $type: 'app.bsky.feed.post', text: 'List test', createdAt: new Date().toISOString() },
     });
 
     const res = await agent.api.com.atproto.repo.listRecords({
-      repo: agent.session?.did!,
+      repo: agent.session?.did,
       collection: 'app.bsky.feed.post',
     });
 

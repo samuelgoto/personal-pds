@@ -1,9 +1,9 @@
 import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
-import { initDb, db } from './src/db.js';
-import app, { wss } from './src/server.js';
-import { maybeInitRepo } from './src/repo.js';
+import { initDb, db } from '../src/db.js';
+import app, { wss } from '../src/server.js';
+import { maybeInitRepo } from '../src/repo.js';
 
 const PORT = process.env.PORT || 3000;
 const DOMAIN = process.env.DOMAIN;
@@ -26,7 +26,7 @@ async function pingRelay() {
       args: [new Date().toISOString()]
     });
     console.log('Relay notified successfully.');
-  } catch (err: any) {
+  } catch (err) {
     console.error('Failed to notify relay:', err.response?.data || err.message);
   }
 }
@@ -48,7 +48,7 @@ app.use(async (req, res, next) => {
   try {
     await initialize();
     next();
-  } catch (err: any) {
+  } catch (err) {
     res.status(500).send(`Server Initialization Error: ${err.message}`);
   }
 });

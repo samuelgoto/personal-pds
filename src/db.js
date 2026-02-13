@@ -1,17 +1,17 @@
-import { createClient, Client } from '@libsql/client';
+import { createClient } from '@libsql/client';
 import 'dotenv/config';
 
-export let db: Client;
+export let db;
 
-export function setDb(client: Client) {
+export function setDb(client) {
   db = client;
 }
 
-export const createDb = (url: string, authToken?: string) => {
+export const createDb = (url, authToken) => {
   return createClient({ url, authToken });
 };
 
-export async function initDb(client: Client) {
+export async function initDb(client) {
   await client.batch([
     `CREATE TABLE IF NOT EXISTS repo_blocks (
       cid TEXT PRIMARY KEY,

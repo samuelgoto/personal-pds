@@ -1,4 +1,4 @@
-import { Repo, ReadableBlockstore, RepoStorage, BlockMap, CommitData, blocksToCarFile } from '@atproto/repo';
+import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile } from '@atproto/repo';
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
@@ -6,11 +6,11 @@ import { cborDecode } from '@atproto/common';
 import { sequencer } from './sequencer.js';
 import { formatDid } from './util.js';
 
-export class TursoStorage extends ReadableBlockstore implements RepoStorage {
-  blocks: BlockMap = new BlockMap();
-  root: CID | null = null;
+export class TursoStorage extends ReadableBlockstore {
+  blocks = new BlockMap();
+  root = null;
 
-  async getBytes(cid: CID): Promise<Uint8Array | null> {
+  async getBytes(cid) {
     const cached = this.blocks.get(cid);
     if (cached) return cached;
     const res = await db.execute({
@@ -18,12 +18,12 @@ export class TursoStorage extends ReadableBlockstore implements RepoStorage {
       args: [cid.toString()]
     });
     if (res.rows.length === 0) return null;
-    const bytes = new Uint8Array(res.rows[0].block as any);
+    const bytes = new Uint8Array(res.rows[0].block);
     this.blocks.set(cid, bytes);
     return bytes;
   }
 
-  async has(cid: CID): Promise<boolean> {
+  async has(cid) {
     if (this.blocks.has(cid)) return true;
     const res = await db.execute({
       sql: 'SELECT 1 FROM repo_blocks WHERE cid = ?',
@@ -32,9 +32,9 @@ export class TursoStorage extends ReadableBlockstore implements RepoStorage {
     return res.rows.length > 0;
   }
 
-  async getBlocks(cids: CID[]): Promise<{ blocks: BlockMap; missing: CID[] }> {
+  async getBlocks(cids) {
     const blocks = new BlockMap();
-    const missing: CID[] = [];
+    const missing = [];
     for (const cid of cids) {
       const bytes = await this.getBytes(cid);
       if (bytes) {
@@ -46,11 +46,11 @@ export class TursoStorage extends ReadableBlockstore implements RepoStorage {
     return { blocks, missing };
   }
 
-  async getRoot(): Promise<CID | null> {
+  async getRoot() {
     return this.root;
   }
 
-  async putBlock(cid: CID, block: Uint8Array): Promise<void> {
+  async putBlock(cid, block) {
     this.blocks.set(cid, block);
     await db.execute({
       sql: 'INSERT OR IGNORE INTO repo_blocks (cid, block) VALUES (?, ?)',
@@ -58,32 +58,32 @@ export class TursoStorage extends ReadableBlockstore implements RepoStorage {
     });
   }
 
-  async putMany(blocks: BlockMap): Promise<void> {
+  async putMany(blocks) {
     for (const [cid, bytes] of blocks) {
       await this.putBlock(cid, bytes);
     }
   }
 
-  async updateRoot(cid: CID): Promise<void> {
+  async updateRoot(cid) {
     this.root = cid;
   }
 
-  async applyCommit(commit: CommitData): Promise<void> {
+  async applyCommit(commit) {
     this.root = commit.cid;
     await this.putMany(commit.newBlocks);
   }
 
-  async getRepoBlocks(): Promise<BlockMap> {
+  async getRepoBlocks() {
     const res = await db.execute('SELECT cid, block FROM repo_blocks');
     const blocks = new BlockMap();
     for (const row of res.rows) {
-      blocks.set(CID.parse(row.cid as string), new Uint8Array(row.block as any));
+      blocks.set(CID.parse(row.cid), new Uint8Array(row.block));
     }
     return blocks;
   }
 }
 
-export async function loadRepo(storage: TursoStorage, did: string, keypair: crypto.Keypair, rootCid: string | null) {
+export async function loadRepo(storage, did, keypair, rootCid) {
   if (!rootCid) {
     const commit = await Repo.formatInitCommit(storage, did, keypair);
     return await Repo.createFromCommit(storage, commit);
@@ -91,16 +91,16 @@ export async function loadRepo(storage: TursoStorage, did: string, keypair: cryp
   return await Repo.load(storage, CID.parse(rootCid));
 }
 
-export const getRootCid = async (): Promise<string | null> => {
+export const getRootCid = async () => {
   try {
     const res = await db.execute({
       sql: "SELECT event FROM sequencer WHERE type = 'commit' ORDER BY seq DESC LIMIT 1"
     });
     if (res.rows.length === 0) return null;
-    const event = cborDecode(new Uint8Array(res.rows[0].event as any)) as any;
+    const event = cborDecode(new Uint8Array(res.rows[0].event));
     return event.commit.toString();
   } catch (e) {
-    return null; // Table might not exist yet
+    return null; 
   }
 };
 

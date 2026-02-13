@@ -21,20 +21,20 @@ wss.on('connection', (ws, req) => {
 });
 
 // Helper to get system state
-const getSystemMeta = async (key: string): Promise<string | null> => {
+const getSystemMeta = async (key) => {
   try {
     const res = await db.execute({
       sql: 'SELECT value FROM system_state WHERE key = ?',
       args: [key]
     });
-    return res.rows.length > 0 ? (res.rows[0].value as string) : null;
+    return res.rows.length > 0 ? res.rows[0].value : null;
   } catch (e) {
     return null;
   }
 };
 
 // Helper to get the single allowed user from Env
-const getSingleUser = async (req: express.Request) => {
+const getSingleUser = async (req) => {
   const host = req.get('host') || 'localhost';
   let handle = host.split(':')[0];
   if (handle === 'localhost') handle = 'localhost.test';
@@ -154,7 +154,7 @@ app.get('/.well-known/did.json', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
-  const { handle } = req.query as any;
+  const { handle } = req.query;
   const user = await getSingleUser(req);
   if (!user || handle !== user.handle) return res.status(404).json({ error: 'HandleNotFound' });
   res.json({ did: user.did });
@@ -171,7 +171,7 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
 });
 
-const auth = (req: any, res: any, next: any) => {
+const auth = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'AuthenticationRequired' });
   const token = authHeader.split(' ')[1];
@@ -181,11 +181,11 @@ const auth = (req: any, res: any, next: any) => {
   next();
 };
 
-app.get('/xrpc/com.atproto.server.getSession', auth, async (req: any, res) => {
+app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
   res.json({ handle: req.user.handle, did: req.user.sub });
 });
 
-app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
+app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
   try {
     const { repo, collection, record, rkey } = req.body;
     const user = await getSingleUser(req);
@@ -221,7 +221,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
   }
 });
 
-app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
+app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
   try {
     const { repo, collection, rkey, record } = req.body;
     const user = await getSingleUser(req);
@@ -256,7 +256,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
   }
 });
 
-app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req: any, res) => {
+app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
   try {
     const { repo, collection, rkey } = req.body;
     const user = await getSingleUser(req);
@@ -299,14 +299,14 @@ app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
 
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
   try {
-    const { repo, collection, limit } = req.query as any;
+    const { repo, collection, limit } = req.query;
     const user = await getSingleUser(req);
     if (!user || (repo !== user.did && repo !== user.handle)) return res.status(404).json({ error: 'RepoNotFound' });
 
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     
-    const records: any[] = [];
+    const records = [];
     for await (const rec of repoObj.walkRecords()) {
       if (rec.collection === collection) {
         records.push({ uri: `at://${user.did}/${rec.collection}/${rec.rkey}`, cid: rec.cid.toString(), value: rec.record });
@@ -319,7 +319,7 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
-  const { repo, collection, rkey } = req.query as any;
+  const { repo, collection, rkey } = req.query;
   const user = await getSingleUser(req);
   if (!user || (repo !== user.did && repo !== user.handle)) return res.status(404).json({ error: 'RepoNotFound' });
   
@@ -332,7 +332,7 @@ app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
-  const { did } = req.query as any;
+  const { did } = req.query;
   const host = req.get('host') || 'localhost';
   const domain = process.env.DOMAIN || host;
   if (did !== formatDid(domain)) return res.status(404).json({ error: 'RepoNotFound' });
