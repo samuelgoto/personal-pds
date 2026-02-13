@@ -5,9 +5,20 @@ import { TursoStorage } from './repo';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
 import { CID } from 'multiformats/cid';
+import { sequencer } from './sequencer';
+import { WebSocketServer } from 'ws';
 
 const app = express();
 app.use(express.json());
+
+// Setup WebSocket server for firehose
+export const wss = new WebSocketServer({ noServer: true });
+
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url || '', `http://${req.headers.host}`);
+  const cursor = url.searchParams.get('cursor');
+  sequencer.addClient(ws, cursor ? parseInt(cursor, 10) : undefined);
+});
 
 // did:web support
 app.get('/.well-known/did.json', async (req, res) => {
@@ -112,6 +123,24 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
     await db.execute({
       sql: 'UPDATE account SET root_cid = ? WHERE did = ?',
       args: [updatedRepo.cid.toString(), req.user.sub]
+    });
+
+    // Sequence the commit for the firehose
+    const carBlocks = await storage.getRepoBlocks();
+    const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
+
+    await sequencer.sequenceEvent({
+      type: 'commit',
+      did: req.user.sub,
+      event: {
+        repo: req.user.sub,
+        commit: updatedRepo.cid,
+        blocks: blocks,
+        rev: updatedRepo.commit.rev,
+        since: repoObj.commit.rev,
+        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: updatedRepo.cid }],
+        time: new Date().toISOString(),
+      }
     });
     
     res.json({

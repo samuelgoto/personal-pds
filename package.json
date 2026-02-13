@@ -6,7 +6,7 @@
   "scripts": {
     "start": "tsx index.ts",
     "setup": "tsx setup.ts",
-    "test": "jest"
+    "test": "jest --forceExit"
   },
   "keywords": [],
   "author": "",

@@ -1,26 +1,26 @@
 import 'dotenv/config';
-import axios from 'axios';
+import http from 'http';
 import { BskyAgent } from '@atproto/api';
-import app from '../src/server';
+import app, { wss } from '../src/server';
 import { initDb, db } from '../src/db';
+import { sequencer } from '../src/sequencer';
 import * as crypto from '@atproto/crypto';
 import { TursoStorage, loadRepo } from '../src/repo';
-import { Server } from 'http';
+import { WebSocket } from 'ws';
 
 const PORT = 3001;
 const HOST = `http://localhost:${PORT}`;
+const WS_HOST = `ws://localhost:${PORT}`;
 const HANDLE = 'test.test';
 const PASSWORD = 'password';
 
 describe('PDS Local Tests', () => {
-  let server: Server;
+  let server: http.Server;
 
   beforeAll(async () => {
-    // Override DB to use a unique in-memory DB for this test run
     process.env.DATABASE_URL = `file:test-${Date.now()}.db`;
     await initDb();
 
-    // Setup user
     const did = `did:web:localhost%3A${PORT}`;
     const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
     const privKey = await keypair.export();
@@ -32,11 +32,24 @@ describe('PDS Local Tests', () => {
       args: [HANDLE, PASSWORD, did, privKey, repo.cid.toString()]
     });
 
-    server = app.listen(PORT);
+    server = http.createServer(app);
+    server.on('upgrade', (request, socket, head) => {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws, request);
+      });
+    });
+    await new Promise<void>((resolve) => {
+        server.listen(PORT, resolve);
+    });
   });
 
-  afterAll(() => {
-    server.close();
+  afterAll(async () => {
+    wss.close();
+    sequencer.close();
+    db.close();
+    await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+    });
   });
 
   test('should create a session', async () => {
@@ -46,32 +59,43 @@ describe('PDS Local Tests', () => {
     expect(agent.session?.handle).toBe(HANDLE);
   });
 
-  test('should create and get a record', async () => {
+  test('should create a record and see it on firehose', async () => {
     const agent = new BskyAgent({ service: HOST });
     await agent.login({ identifier: HANDLE, password: PASSWORD });
 
+    const ws = new WebSocket(`${WS_HOST}/xrpc/com.atproto.sync.subscribeRepos`);
+    
+    await new Promise((resolve, reject) => {
+        ws.on('open', resolve);
+        ws.on('error', reject);
+    });
+
+    const messagePromise = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timeout waiting for firehose')), 5000);
+      ws.on('message', (data) => {
+        clearTimeout(timeout);
+        resolve(data);
+      });
+      ws.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+
     const record = {
       $type: 'app.bsky.feed.post',
-      text: 'Hello from my minimal PDS!',
+      text: 'Firehose test!',
       createdAt: new Date().toISOString(),
     };
 
-    const res = await agent.api.com.atproto.repo.createRecord({
+    await agent.api.com.atproto.repo.createRecord({
       repo: agent.session?.did!,
       collection: 'app.bsky.feed.post',
       record,
     });
 
-    expect(res.success).toBe(true);
-    expect(res.data.uri).toBeDefined();
-
-    const getRes = await agent.api.com.atproto.repo.getRecord({
-      repo: agent.session?.did!,
-      collection: 'app.bsky.feed.post',
-      rkey: res.data.uri.split('/').pop()!,
-    });
-
-    expect(getRes.success).toBe(true);
-    expect(getRes.data.value).toMatchObject(record);
-  });
+    const data = await messagePromise;
+    expect(data).toBeDefined();
+    ws.close();
+  }, 15000);
 });

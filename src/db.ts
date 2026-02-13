@@ -24,6 +24,13 @@ export async function initDb() {
       handle TEXT NOT NULL,
       did TEXT NOT NULL,
       expires_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS sequencer (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      did TEXT NOT NULL,
+      type TEXT NOT NULL,
+      event BLOB NOT NULL,
+      time TEXT NOT NULL
     )`
   ], "write");
 }
