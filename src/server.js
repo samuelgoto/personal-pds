@@ -320,6 +320,60 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
   }
 });
 
+app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
+  try {
+    const { actor } = req.query;
+    const user = await getSingleUser(req);
+    if (!user || (actor !== user.did && actor !== user.handle)) {
+        return res.status(404).json({ error: 'ProfileNotFound' });
+    }
+
+    const storage = new TursoStorage();
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    
+    res.json({
+        did: user.did,
+        handle: user.handle,
+        displayName: profile?.displayName || user.handle,
+        description: profile?.description || '',
+        avatar: profile?.avatar,
+        banner: profile?.banner,
+        indexedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
+  res.json({ preferences: [] });
+});
+
+app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res) => {
+  res.json({});
+});
+
+app.get('/xrpc/app.bsky.labeler.getServices', async (req, res) => {
+  res.json({ views: [] });
+});
+
+app.get('/xrpc/app.bsky.ageassurance.getState', async (req, res) => {
+  res.json({ status: 'undetermined' });
+});
+
+app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res) => {
+  res.json({ logs: [] });
+});
+
+app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res) => {
+  res.json({ convos: [] });
+});
+
+app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res) => {
+  res.json({ notifications: [], cursor: '' });
+});
+
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const host = req.get('host') || 'localhost';
   res.json({ availableUserDomains: [host], did: formatDid(host) });
