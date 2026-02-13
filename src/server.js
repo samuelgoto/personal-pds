@@ -52,10 +52,10 @@ const getSystemMeta = async (key) => {
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
   const host = req.get('host') || 'localhost';
-  let handle = process.env.HANDLE || host.split(':')[0];
+  const domain = process.env.DOMAIN || host;
+  let handle = process.env.HANDLE || domain;
   if (handle === 'localhost') handle = 'localhost.test';
   
-  const domain = process.env.DOMAIN || host;
   const did = formatDid(domain);
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
