@@ -189,17 +189,26 @@ app.get('/.well-known/did.json', async (req, res) => {
   res.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
     "id": did,
+    "alsoKnownAs": [`at://${host}`],
     "service": [{
       "id": "#atproto_pds",
       "type": "AtprotoPersonalDataServer",
       "serviceEndpoint": serviceEndpoint
     }],
-    "verificationMethod": [{
-      "id": `${did}#atproto`,
-      "type": "Multikey",
-      "controller": did,
-      "publicKeyMultibase": keypair.did().split(':').pop()
-    }],
+    "verificationMethod": [
+      {
+        "id": `${did}#atproto`,
+        "type": "Multikey",
+        "controller": did,
+        "publicKeyMultibase": keypair.did().split(':').pop()
+      },
+      {
+        "id": `${did}#atproto-legacy`,
+        "type": "EcdsaSecp256k1VerificationKey2019",
+        "controller": did,
+        "publicKeyMultibase": keypair.did().split(':').pop()
+      }
+    ],
     "authentication": [`${did}#atproto`]
   });
 });
