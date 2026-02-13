@@ -103,8 +103,8 @@ describe('Relay Interaction & Protocol Compliance', () => {
 
     // Create a record to trigger firehose
     const loginRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.server.createSession`, {
-      identifier: 'relay-unique.test',
-      password: 'pass'
+      identifier: 'localhost.test',
+      password: process.env.PASSWORD || 'admin'
     });
     const token = loginRes.data.accessJwt;
 

@@ -12,8 +12,8 @@ import { Client } from '@libsql/client';
 const PORT = 3001;
 const HOST = `http://localhost:${PORT}`;
 const WS_HOST = `ws://localhost:${PORT}`;
-const HANDLE = 'test.test';
-const PASSWORD = 'password';
+const HANDLE = 'localhost.test';
+const PASSWORD = process.env.PASSWORD || 'admin';
 
 describe('PDS Local Tests', () => {
   let server: http.Server;

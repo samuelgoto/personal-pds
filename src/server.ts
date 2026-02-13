@@ -69,26 +69,52 @@ async function serveDidDoc(res: any, did: string, signing_key: any, host: string
 // XRPC: resolveHandle
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   const { handle } = req.query as any;
-  const result = await db.execute({
-    sql: 'SELECT did FROM account WHERE handle = ?',
-    args: [handle]
-  });
-  if (result.rows.length === 0) return res.status(404).json({ error: 'HandleNotFound' });
-  res.json({ did: result.rows[0].did });
+  const user = await getSingleUser(req);
+  if (!user || handle !== user.handle) {
+    return res.status(404).json({ error: 'HandleNotFound' });
+  }
+  res.json({ did: user.did });
 });
+
+// Helper to get the single allowed user
+const getSingleUser = async (req: express.Request) => {
+  const host = req.get('host') || 'localhost';
+  let handle = host.split(':')[0]; // Use hostname as handle
+  if (handle === 'localhost') handle = 'localhost.test'; // Lexicon validation requires a dot
+  const password = process.env.PASSWORD || 'admin';
+  
+  const account = await db.execute({
+    sql: 'SELECT did, signing_key, root_cid FROM account LIMIT 1'
+  });
+  
+  if (account.rows.length === 0) return null;
+  
+  return {
+    handle,
+    password,
+    did: account.rows[0].did as string,
+    signing_key: account.rows[0].signing_key as any,
+    root_cid: account.rows[0].root_cid as string
+  };
+};
 
 // XRPC: createSession
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   const { identifier, password } = req.body;
-  const result = await db.execute({
-    sql: 'SELECT * FROM account WHERE handle = ? OR did = ?',
-    args: [identifier, identifier]
-  });
+  const user = await getSingleUser(req);
   
-  if (result.rows.length === 0) return res.status(401).json({ error: 'InvalidIdentifier' });
-  const user = result.rows[0] as any;
+  if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
   
-  if (user.password !== password) return res.status(401).json({ error: 'InvalidPassword' });
+  console.log(`createSession debug: identifier=${identifier}, user.handle=${user.handle}, user.did=${user.did}`);
+
+  // Accept either the handle or the DID as identifier
+  if (identifier !== user.handle && identifier !== user.did) {
+    return res.status(401).json({ error: 'InvalidIdentifier' });
+  }
+  
+  if (password !== user.password) {
+    return res.status(401).json({ error: 'InvalidPassword' });
+  }
   
   const accessJwt = createToken(user.did, user.handle);
   
@@ -121,14 +147,8 @@ app.get('/xrpc/com.atproto.server.getSession', auth, async (req: any, res) => {
 app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
   try {
     const { repo, collection, record, rkey } = req.body;
-    if (repo !== req.user.sub) return res.status(403).json({ error: 'InvalidRepo' });
-    
-    const userResult = await db.execute({
-      sql: 'SELECT signing_key, root_cid FROM account WHERE did = ?',
-      args: [req.user.sub]
-    });
-    if (userResult.rows.length === 0) return res.status(404).json({ error: 'UserNotFound' });
-    const user = userResult.rows[0] as any;
+    const user = await getSingleUser(req);
+    if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
     const storage = new TursoStorage();
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
@@ -148,7 +168,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
     
     await db.execute({
       sql: 'UPDATE account SET root_cid = ? WHERE did = ?',
-      args: [updatedRepo.cid.toString(), req.user.sub]
+      args: [updatedRepo.cid.toString(), user.did]
     });
 
     // Sequence the commit for the firehose
@@ -157,9 +177,9 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
 
     await sequencer.sequenceEvent({
       type: 'commit',
-      did: req.user.sub,
+      did: user.did,
       event: {
-        repo: req.user.sub,
+        repo: user.did,
         commit: updatedRepo.cid,
         blocks: blocks,
         rev: updatedRepo.commit.rev,
@@ -170,7 +190,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
     });
     
     res.json({
-      uri: `at://${req.user.sub}/${collection}/${finalRkey}`,
+      uri: `at://${user.did}/${collection}/${finalRkey}`,
       cid: updatedRepo.cid.toString()
     });
   } catch (err) {
@@ -183,14 +203,8 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req: any, res) => {
 app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
   try {
     const { repo, collection, rkey, record } = req.body;
-    if (repo !== req.user.sub) return res.status(403).json({ error: 'InvalidRepo' });
-    
-    const userResult = await db.execute({
-      sql: 'SELECT signing_key, root_cid FROM account WHERE did = ?',
-      args: [req.user.sub]
-    });
-    if (userResult.rows.length === 0) return res.status(404).json({ error: 'UserNotFound' });
-    const user = userResult.rows[0] as any;
+    const user = await getSingleUser(req);
+    if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
     const storage = new TursoStorage();
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
@@ -207,7 +221,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
     
     await db.execute({
       sql: 'UPDATE account SET root_cid = ? WHERE did = ?',
-      args: [updatedRepo.cid.toString(), req.user.sub]
+      args: [updatedRepo.cid.toString(), user.did]
     });
 
     const carBlocks = await storage.getRepoBlocks();
@@ -215,9 +229,9 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
 
     await sequencer.sequenceEvent({
       type: 'commit',
-      did: req.user.sub,
+      did: user.did,
       event: {
-        repo: req.user.sub,
+        repo: user.did,
         commit: updatedRepo.cid,
         blocks: blocks,
         rev: updatedRepo.commit.rev,
@@ -228,7 +242,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
     });
     
     res.json({
-      uri: `at://${req.user.sub}/${collection}/${rkey}`,
+      uri: `at://${user.did}/${collection}/${rkey}`,
       cid: updatedRepo.cid.toString()
     });
   } catch (err) {
@@ -241,14 +255,8 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req: any, res) => {
 app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req: any, res) => {
   try {
     const { repo, collection, rkey } = req.body;
-    if (repo !== req.user.sub) return res.status(403).json({ error: 'InvalidRepo' });
-    
-    const userResult = await db.execute({
-      sql: 'SELECT signing_key, root_cid FROM account WHERE did = ?',
-      args: [req.user.sub]
-    });
-    if (userResult.rows.length === 0) return res.status(404).json({ error: 'UserNotFound' });
-    const user = userResult.rows[0] as any;
+    const user = await getSingleUser(req);
+    if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
     const storage = new TursoStorage();
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
@@ -264,7 +272,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req: any, res) => {
     
     await db.execute({
       sql: 'UPDATE account SET root_cid = ? WHERE did = ?',
-      args: [updatedRepo.cid.toString(), req.user.sub]
+      args: [updatedRepo.cid.toString(), user.did]
     });
 
     const carBlocks = await storage.getRepoBlocks();
@@ -272,9 +280,9 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req: any, res) => {
 
     await sequencer.sequenceEvent({
       type: 'commit',
-      did: req.user.sub,
+      did: user.did,
       event: {
-        repo: req.user.sub,
+        repo: user.did,
         commit: updatedRepo.cid,
         blocks: blocks,
         rev: updatedRepo.commit.rev,
@@ -304,12 +312,8 @@ app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
   try {
     const { repo, collection, limit, cursor } = req.query as any;
-    const userResult = await db.execute({
-      sql: 'SELECT root_cid FROM account WHERE did = ? OR handle = ?',
-      args: [repo, repo]
-    });
-    if (userResult.rows.length === 0) return res.status(404).json({ error: 'RepoNotFound' });
-    const user = userResult.rows[0] as any;
+    const user = await getSingleUser(req);
+    if (!user || (repo !== user.did && repo !== user.handle)) return res.status(404).json({ error: 'RepoNotFound' });
 
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
@@ -318,7 +322,7 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
     for await (const rec of repoObj.walkRecords()) {
       if (rec.collection === collection) {
         records.push({
-          uri: `at://${repo}/${rec.collection}/${rec.rkey}`,
+          uri: `at://${user.did}/${rec.collection}/${rec.rkey}`,
           cid: rec.cid.toString(),
           value: rec.record
         });
@@ -340,12 +344,8 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
 // XRPC: getRecord
 app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
   const { repo, collection, rkey } = req.query as any;
-  const userResult = await db.execute({
-    sql: 'SELECT root_cid FROM account WHERE did = ? OR handle = ?',
-    args: [repo, repo]
-  });
-  if (userResult.rows.length === 0) return res.status(404).json({ error: 'RepoNotFound' });
-  const user = userResult.rows[0] as any;
+  const user = await getSingleUser(req);
+  if (!user || (repo !== user.did && repo !== user.handle)) return res.status(404).json({ error: 'RepoNotFound' });
   
   const storage = new TursoStorage();
   const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
@@ -354,7 +354,7 @@ app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
   if (!record) return res.status(404).json({ error: 'RecordNotFound' });
   
   res.json({
-    uri: `at://${repo}/${collection}/${rkey}`,
+    uri: `at://${user.did}/${collection}/${rkey}`,
     value: record
   });
 });

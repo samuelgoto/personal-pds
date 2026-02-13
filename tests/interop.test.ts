@@ -61,8 +61,8 @@ describe('PDS Interoperability Tests', () => {
   test('should serve a valid CAR file via getRepo', async () => {
     // 1. Create a record first
     const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
-      identifier: 'interop-unique.test',
-      password: 'pass'
+      identifier: 'localhost.test',
+      password: process.env.PASSWORD || 'admin'
     });
     const token = loginRes.data.accessJwt;
 
