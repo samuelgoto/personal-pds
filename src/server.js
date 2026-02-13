@@ -11,14 +11,8 @@ import { WebSocketServer } from 'ws';
 import { formatDid } from './util.js';
 
 const app = express();
-app.use(express.json());
 
-// Logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
-  next();
-});
-
+// 1. CORS middleware (Absolute top)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin) {
@@ -35,7 +29,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// 2. Logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  next();
+});
+
+// 3. JSON parser
+app.use(express.json());
+
 export const wss = new WebSocketServer({ noServer: true });
+
 
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url || '', `http://${req.headers.host}`);
@@ -83,6 +87,17 @@ const getSingleUser = async (req) => {
   };
 };
 
+const auth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: 'AuthenticationRequired' });
+  const token = authHeader.split(' ')[1];
+  const payload = verifyToken(token);
+  if (!payload) return res.status(401).json({ error: 'InvalidToken' });
+  req.user = payload;
+  next();
+};
+
+// --- Endpoints ---
 app.get('/.well-known/atproto-did', async (req, res) => {
   const host = req.get('host') || 'localhost';
   res.setHeader('Content-Type', 'text/plain');
@@ -219,16 +234,6 @@ app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
     res.status(500).json({ error: 'InternalServerError' });
   }
 });
-
-const auth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'AuthenticationRequired' });
-  const token = authHeader.split(' ')[1];
-  const payload = verifyToken(token);
-  if (!payload) return res.status(401).json({ error: 'InvalidToken' });
-  req.user = payload;
-  next();
-};
 
 app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
   res.json({ handle: req.user.handle, did: req.user.sub });
