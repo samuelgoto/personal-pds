@@ -401,6 +401,62 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   }
 });
 
+app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res) => {
+  try {
+    const { actor, limit } = req.query;
+    const user = await getSingleUser(req);
+    if (!user || (actor !== user.did && actor !== user.handle)) {
+        return res.json({ feed: [] });
+    }
+
+    const storage = new TursoStorage();
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    
+    const author = {
+        did: user.did,
+        handle: user.handle,
+        displayName: profile?.displayName || user.handle,
+        avatar: profile?.avatar,
+        indexedAt: new Date().toISOString(),
+    };
+
+    const feed = [];
+    for await (const rec of repoObj.walkRecords()) {
+      if (rec.collection === 'app.bsky.feed.post') {
+        feed.push({
+            post: {
+                uri: `at://${user.did}/${rec.collection}/${rec.rkey}`,
+                cid: rec.cid.toString(),
+                author,
+                record: rec.record,
+                replyCount: 0,
+                repostCount: 0,
+                likeCount: 0,
+                indexedAt: rec.record.createdAt || new Date().toISOString(),
+            }
+        });
+      }
+    }
+    
+    feed.sort((a, b) => new Date(b.post.record.createdAt).getTime() - new Date(a.post.record.createdAt).getTime());
+
+    res.json({ 
+        feed: feed.slice(0, parseInt(limit || '50', 10)),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
+  const host = req.get('host') || 'localhost';
+  const domain = host;
+  req.query.actor = domain === 'localhost' ? 'did:web:localhost.test' : formatDid(domain);
+  // Forward to getAuthorFeed
+  return app._router.handle({ ...req, url: '/xrpc/app.bsky.feed.getAuthorFeed' }, res);
+});
+
 app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
   try {
     const { actor } = req.query;
@@ -424,9 +480,26 @@ app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
-  res.json({ feed: [] });
+app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res) => {
+  res.json({ followers: [] });
 });
+
+app.get('/xrpc/app.bsky.graph.getMutes', auth, async (req, res) => {
+  res.json({ mutes: [] });
+});
+
+app.get('/xrpc/app.bsky.graph.getBlocks', auth, async (req, res) => {
+  res.json({ blocks: [] });
+});
+
+app.get('/xrpc/app.bsky.actor.getSuggestions', auth, async (req, res) => {
+  res.json({ actors: [] });
+});
+
+app.get('/xrpc/app.bsky.notification.getUnreadCount', auth, async (req, res) => {
+  res.json({ count: 0 });
+});
+
 
 app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res) => {
   res.json({});
