@@ -12,6 +12,16 @@ import { formatDid } from './util.js';
 const app = express();
 app.use(express.json());
 
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 export const wss = new WebSocketServer({ noServer: true });
 
 wss.on('connection', (ws, req) => {
@@ -135,17 +145,20 @@ app.get('/.well-known/did.json', async (req, res) => {
   
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
   
+  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
+  const serviceEndpoint = `${protocol}://${domain}`;
+
   res.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
     "id": did,
     "service": [{
       "id": "#atproto_pds",
       "type": "AtprotoPersonalDataServer",
-      "serviceEndpoint": `https://${host}`
+      "serviceEndpoint": serviceEndpoint
     }],
     "verificationMethod": [{
       "id": `${did}#atproto`,
-      "type": "EcdsaSecp256k1VerificationKey2019",
+      "type": "Multikey",
       "controller": did,
       "publicKeyMultibase": keypair.did().split(':').pop()
     }],
@@ -294,7 +307,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const host = req.get('host') || 'localhost';
   const domain = process.env.DOMAIN || host;
-  res.json({ availableUserDomains: [], did: formatDid(domain) });
+  res.json({ availableUserDomains: [domain], did: formatDid(domain) });
 });
 
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
