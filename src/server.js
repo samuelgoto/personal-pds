@@ -350,6 +350,10 @@ app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
   res.json({ preferences: [] });
 });
 
+app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
+  res.json({});
+});
+
 app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res) => {
   res.json({});
 });
