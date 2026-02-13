@@ -216,6 +216,14 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
 });
 
+app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
+  const user = await getSingleUser(req);
+  if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
+  
+  const accessJwt = createToken(user.did, user.handle);
+  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
+});
+
 app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
   try {
     const user = await getSingleUser(req);
