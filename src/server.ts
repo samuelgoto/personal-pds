@@ -1,13 +1,13 @@
 import express from 'express';
-import { db } from './db';
-import { createToken, verifyToken } from './auth';
-import { TursoStorage, getRootCid } from './repo';
+import { db } from './db.js';
+import { createToken, verifyToken } from './auth.js';
+import { TursoStorage, getRootCid } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
-import { CID } from 'multiformats/cid';
-import { sequencer } from './sequencer';
+import { CID } from 'multiformats';
+import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
-import { formatDid } from './util';
+import { formatDid } from './util.js';
 
 const app = express();
 app.use(express.json());

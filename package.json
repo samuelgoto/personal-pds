@@ -2,11 +2,12 @@
   "name": "self-pds",
   "version": "1.0.0",
   "description": "This project aims to implement a minimal, single-user AT Protocol Personal Data Server (PDS) in Node.js, optimized for Vercel and Turso.",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "tsx index.ts",
     "setup": "tsx setup.ts",
-    "test": "jest --forceExit"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --forceExit"
   },
   "keywords": [],
   "author": "",

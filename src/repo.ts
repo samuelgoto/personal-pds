@@ -1,10 +1,10 @@
 import { Repo, ReadableBlockstore, RepoStorage, BlockMap, CommitData, blocksToCarFile } from '@atproto/repo';
-import { CID } from 'multiformats/cid';
-import { db } from './db';
+import { CID } from 'multiformats';
+import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
 import { cborDecode } from '@atproto/common';
-import { sequencer } from './sequencer';
-import { formatDid } from './util';
+import { sequencer } from './sequencer.js';
+import { formatDid } from './util.js';
 
 export class TursoStorage extends ReadableBlockstore implements RepoStorage {
   blocks: BlockMap = new BlockMap();

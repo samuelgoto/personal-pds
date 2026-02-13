@@ -1,4 +1,4 @@
-import { db } from './db';
+import { db } from './db.js';
 import { cborEncode } from '@atproto/common';
 import { WebSocket } from 'ws';
 

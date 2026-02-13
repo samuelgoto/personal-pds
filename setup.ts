@@ -1,10 +1,10 @@
 import 'dotenv/config';
-import { db, initDb } from './src/db';
+import { db, initDb } from './src/db.js';
 import * as crypto from '@atproto/crypto';
-import { TursoStorage, loadRepo } from './src/repo';
-import { sequencer } from './src/sequencer';
+import { TursoStorage, loadRepo } from './src/repo.js';
+import { sequencer } from './src/sequencer.js';
 import { blocksToCarFile } from '@atproto/repo';
-import { formatDid } from './src/util';
+import { formatDid } from './src/util.js';
 
 async function setup() {
   await initDb(db);

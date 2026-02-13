@@ -13,6 +13,10 @@ import { Client } from '@libsql/client';
 import { formatDid } from '../src/util';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = 3003;
 const HOST = `localhost:${PORT}`;
