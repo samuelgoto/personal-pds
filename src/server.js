@@ -401,6 +401,33 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   }
 });
 
+app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
+  try {
+    const { actor } = req.query;
+    const user = await getSingleUser(req);
+    
+    let profile = undefined;
+    if (user && (actor === user.did || actor === user.handle)) {
+        profile = {
+            did: user.did,
+            handle: user.handle,
+            indexedAt: new Date().toISOString(),
+        };
+    }
+
+    res.json({
+        follows: [],
+        subject: profile,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
+  res.json({ feed: [] });
+});
+
 app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res) => {
   res.json({});
 });
