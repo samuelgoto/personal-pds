@@ -1,12 +1,33 @@
 import 'dotenv/config';
 import http from 'http';
-import { initDb } from './src/db';
+import axios from 'axios';
+import { initDb, db } from './src/db';
 import app, { wss } from './src/server';
 
 const PORT = process.env.PORT || 3000;
+const DOMAIN = process.env.DOMAIN || 'localhost:3000';
+const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
+
+async function pingRelay() {
+  if (DOMAIN.includes('localhost') || DOMAIN.includes('127.0.0.1')) {
+    console.log('Skipping relay ping: PDS is running on localhost.');
+    return;
+  }
+
+  try {
+    const hostname = new URL(`https://${DOMAIN}`).hostname;
+    console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
+    await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
+      hostname: hostname
+    });
+    console.log('Relay notified successfully.');
+  } catch (err: any) {
+    console.error('Failed to notify relay:', err.response?.data || err.message);
+  }
+}
 
 async function start() {
-  await initDb();
+  await initDb(db);
   
   const server = http.createServer(app);
 
@@ -18,6 +39,9 @@ async function start() {
 
   server.listen(PORT, () => {
     console.log(`Minimal PDS listening on port ${PORT}`);
+    
+    // Notify the relay that we are online
+    pingRelay().catch(console.error);
   });
 }
 

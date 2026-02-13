@@ -1,13 +1,18 @@
-import { createClient } from '@libsql/client';
+import { createClient, Client } from '@libsql/client';
 import 'dotenv/config';
 
-export const db = createClient({
-  url: process.env.DATABASE_URL || 'file:local.db',
-  authToken: process.env.DATABASE_AUTH_TOKEN,
-});
+export let db: Client;
 
-export async function initDb() {
-  await db.batch([
+export function setDb(client: Client) {
+  db = client;
+}
+
+export const createDb = (url: string, authToken?: string) => {
+  return createClient({ url, authToken });
+};
+
+export async function initDb(client: Client) {
+  await client.batch([
     `CREATE TABLE IF NOT EXISTS account (
       handle TEXT PRIMARY KEY,
       password TEXT NOT NULL,
@@ -34,3 +39,7 @@ export async function initDb() {
     )`
   ], "write");
 }
+
+// Default initialization for production
+const defaultUrl = process.env.DATABASE_URL || 'file:local.db';
+db = createDb(defaultUrl, process.env.DATABASE_AUTH_TOKEN);
