@@ -29,7 +29,12 @@ const getSingleUser = async (req: express.Request) => {
   const domain = process.env.DOMAIN || host;
   const did = formatDid(domain);
   const privKeyHex = process.env.PRIVATE_KEY;
-  const password = process.env.PASSWORD || 'admin';
+  const password = process.env.PASSWORD;
+  
+  if (!password) {
+    throw new Error('PASSWORD environment variable is not set');
+  }
+  
   const root_cid = await getRootCid();
   
   if (!privKeyHex || !root_cid) return null;

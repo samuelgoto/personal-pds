@@ -23,6 +23,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
   let testDb: Client;
 
   beforeAll(async () => {
+    process.env.PASSWORD = 'relay-pass';
     const dbUrl = `file:relay-${Date.now()}.db`;
     testDb = createDb(dbUrl);
     setDb(testDb);
@@ -82,7 +83,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
 
     const loginRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.server.createSession`, {
       identifier: 'localhost.test',
-      password: process.env.PASSWORD || 'admin'
+      password: process.env.PASSWORD
     });
     const token = loginRes.data.accessJwt;
 

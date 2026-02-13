@@ -28,6 +28,11 @@ async function pingRelay() {
 }
 
 async function start() {
+  if (!process.env.PASSWORD) {
+    console.error('FATAL: PASSWORD environment variable is not set.');
+    process.exit(1);
+  }
+
   await initDb(db);
   await maybeInitRepo();
   

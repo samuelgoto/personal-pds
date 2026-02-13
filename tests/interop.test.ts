@@ -19,6 +19,7 @@ describe('PDS Interoperability Tests', () => {
   let testDb: Client;
 
   beforeAll(async () => {
+    process.env.PASSWORD = 'interop-pass';
     const dbUrl = `file:interop-${Date.now()}.db`;
     testDb = createDb(dbUrl);
     setDb(testDb);
@@ -57,7 +58,7 @@ describe('PDS Interoperability Tests', () => {
   test('should serve a valid CAR file via getRepo', async () => {
     const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
       identifier: 'localhost.test',
-      password: process.env.PASSWORD || 'admin'
+      password: process.env.PASSWORD
     });
     const token = loginRes.data.accessJwt;
 

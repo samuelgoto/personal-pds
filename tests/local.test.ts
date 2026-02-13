@@ -14,13 +14,14 @@ const PORT = 3001;
 const HOST = `http://localhost:${PORT}`;
 const WS_HOST = `ws://localhost:${PORT}`;
 const HANDLE = 'localhost.test';
-const PASSWORD = process.env.PASSWORD || 'admin';
+const PASSWORD = 'test-password-123';
 
 describe('PDS Local Tests', () => {
   let server: http.Server;
   let testDb: Client;
 
   beforeAll(async () => {
+    process.env.PASSWORD = PASSWORD;
     const dbUrl = `file:test-${Date.now()}.db`;
     testDb = createDb(dbUrl);
     setDb(testDb);
