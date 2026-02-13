@@ -3,7 +3,7 @@ import { db, initDb } from './src/db.js';
 import * as crypto from '@atproto/crypto';
 import { TursoStorage, loadRepo } from './src/repo.js';
 import { sequencer } from './src/sequencer.js';
-import { blocksToCarFile } from '@atproto/repo';
+import { blocksToCarFile, WriteOpAction } from '@atproto/repo';
 import { formatDid } from './src/util.js';
 
 async function setup() {
@@ -23,7 +23,25 @@ async function setup() {
 
   console.log(`Initializing repository...`);
   const storage = new TursoStorage();
-  const repo = await loadRepo(storage, did, keypair, null);
+  
+  // Initial empty repo
+  let repo = await loadRepo(storage, did, keypair, null);
+  
+  // Create default profile
+  console.log(`Creating default profile...`);
+  repo = await repo.applyWrites([
+    {
+      action: WriteOpAction.Create,
+      collection: 'app.bsky.actor.profile',
+      rkey: 'self',
+      record: {
+        $type: 'app.bsky.actor.profile',
+        displayName: domain,
+        description: 'Personal PDS',
+        createdAt: new Date().toISOString(),
+      },
+    }
+  ], keypair);
   
   const carBlocks = await storage.getRepoBlocks();
   const blocks = await blocksToCarFile(repo.cid, carBlocks);
@@ -37,7 +55,7 @@ async function setup() {
       blocks: blocks,
       rev: repo.commit.rev,
       since: null,
-      ops: [],
+      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: repo.cid }],
       time: new Date().toISOString(),
     }
   });
