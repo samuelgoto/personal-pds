@@ -201,6 +201,25 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
 });
 
+app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
+  try {
+    const user = await getSingleUser(req);
+    if (!user) return res.status(404).json({ error: 'UserNotFound' });
+    
+    const birthDate = await getSystemMeta(`birthDate:${user.did}`) || '1990-01-01';
+
+    res.json({
+      handle: user.handle,
+      did: user.did,
+      email: 'pds@example.com',
+      emailConfirmed: true,
+      birthDate: birthDate,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 const auth = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'AuthenticationRequired' });
@@ -382,8 +401,18 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
 
 app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
   try {
-    const prefs = await getSystemMeta(`prefs:${req.user.sub}`);
-    res.json({ preferences: prefs ? JSON.parse(prefs) : [] });
+    const prefsJson = await getSystemMeta(`prefs:${req.user.sub}`);
+    let preferences = prefsJson ? JSON.parse(prefsJson) : [];
+    
+    // Ensure there is at least an adultContentPref if missing
+    if (!preferences.find(p => p.$type === 'app.bsky.actor.defs#adultContentPref')) {
+        preferences.push({
+            $type: 'app.bsky.actor.defs#adultContentPref',
+            enabled: true
+        });
+    }
+
+    res.json({ preferences });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
   }
@@ -392,6 +421,16 @@ app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
 app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   try {
     const { preferences } = req.body;
+    
+    // Extract and store birthDate if provided in personalDetailsPref
+    const personalDetailsPref = preferences.find(p => p.$type === 'app.bsky.actor.defs#personalDetailsPref');
+    if (personalDetailsPref?.birthDate) {
+        await db.execute({
+            sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+            args: [`birthDate:${req.user.sub}`, personalDetailsPref.birthDate]
+        });
+    }
+
     await db.execute({
       sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
       args: [`prefs:${req.user.sub}`, JSON.stringify(preferences)]
@@ -612,7 +651,7 @@ app.get('/xrpc/app.bsky.labeler.getServices', async (req, res) => {
 });
 
 app.get('/xrpc/app.bsky.ageassurance.getState', async (req, res) => {
-  res.json({ status: 'undetermined' });
+  res.json({ status: 'verified' });
 });
 
 app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res) => {
