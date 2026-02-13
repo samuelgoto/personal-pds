@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import http from 'http';
+import axios from 'axios';
 import { BskyAgent } from '@atproto/api';
 import app, { wss } from '../src/server';
 import { initDb, createDb, setDb } from '../src/db';
@@ -9,6 +10,8 @@ import { maybeInitRepo } from '../src/repo';
 import { WebSocket } from 'ws';
 import { Client } from '@libsql/client';
 import { formatDid } from '../src/util';
+import fs from 'fs';
+import path from 'path';
 
 const PORT = 3001;
 const HOST = `http://localhost:${PORT}`;
@@ -19,11 +22,13 @@ const PASSWORD = 'test-password-123';
 describe('PDS Local Tests', () => {
   let server: http.Server;
   let testDb: Client;
+  let dbPath: string;
 
   beforeAll(async () => {
     process.env.PASSWORD = PASSWORD;
-    const dbUrl = `file:test-${Date.now()}.db`;
-    testDb = createDb(dbUrl);
+    const dbName = `test-${Date.now()}.db`;
+    dbPath = path.join(__dirname, dbName);
+    testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
     await initDb(testDb);
 
@@ -48,7 +53,14 @@ describe('PDS Local Tests', () => {
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+    });
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const shmPath = `${dbPath}-shm`;
+    const walPath = `${dbPath}-wal`;
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
   });
 
   test('should create a session', async () => {
@@ -56,6 +68,12 @@ describe('PDS Local Tests', () => {
     const login = await agent.login({ identifier: HANDLE, password: PASSWORD });
     expect(login.success).toBe(true);
     expect(agent.session?.handle).toBe(HANDLE);
+  });
+
+  test('should serve the dashboard at /', async () => {
+    const res = await axios.get(HOST);
+    expect(res.status).toBe(200);
+    expect(res.data).toContain('Personal PDS Dashboard');
   });
 
   test('should create a record and see it on firehose', async () => {

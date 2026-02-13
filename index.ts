@@ -21,6 +21,10 @@ async function pingRelay() {
     await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
       hostname: hostname
     });
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES ('last_relay_ping', ?)",
+      args: [new Date().toISOString()]
+    });
     console.log('Relay notified successfully.');
   } catch (err: any) {
     console.error('Failed to notify relay:', err.response?.data || err.message);

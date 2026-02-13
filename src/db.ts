@@ -29,6 +29,10 @@ export async function initDb(client: Client) {
       type TEXT NOT NULL,
       event BLOB NOT NULL,
       time TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS system_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
     )`
   ], "write");
 }

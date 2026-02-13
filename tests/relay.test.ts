@@ -6,11 +6,13 @@ import app, { wss } from '../src/server';
 import { initDb, createDb, setDb } from '../src/db';
 import { sequencer } from '../src/sequencer';
 import * as crypto from '@atproto/crypto';
-import { maybeInitRepo } from '../src/repo';
+import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo';
 import { WebSocket } from 'ws';
 import { readCarWithRoot } from '@atproto/repo';
 import { Client } from '@libsql/client';
 import { formatDid } from '../src/util';
+import fs from 'fs';
+import path from 'path';
 
 const PORT = 3003;
 const HOST = `localhost:${PORT}`;
@@ -21,11 +23,13 @@ describe('Relay Interaction & Protocol Compliance', () => {
   let server: http.Server;
   let userDid: string;
   let testDb: Client;
+  let dbPath: string;
 
   beforeAll(async () => {
     process.env.PASSWORD = 'relay-pass';
-    const dbUrl = `file:relay-${Date.now()}.db`;
-    testDb = createDb(dbUrl);
+    const dbName = `relay-${Date.now()}.db`;
+    dbPath = path.join(__dirname, dbName);
+    testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
     await initDb(testDb);
 
@@ -52,6 +56,11 @@ describe('Relay Interaction & Protocol Compliance', () => {
     testDb.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     nock.cleanAll();
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const shmPath = `${dbPath}-shm`;
+    const walPath = `${dbPath}-wal`;
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
   });
 
   test('should simulate a full relay indexing flow', async () => {

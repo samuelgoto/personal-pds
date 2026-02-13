@@ -5,10 +5,12 @@ import app, { wss } from '../src/server';
 import { initDb, createDb, setDb } from '../src/db';
 import { sequencer } from '../src/sequencer';
 import * as crypto from '@atproto/crypto';
-import { maybeInitRepo } from '../src/repo';
+import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo';
 import { readCarWithRoot } from '@atproto/repo';
 import { Client } from '@libsql/client';
 import { formatDid } from '../src/util';
+import fs from 'fs';
+import path from 'path';
 
 const PORT = 3002;
 const HOST = `http://localhost:${PORT}`;
@@ -17,11 +19,13 @@ describe('PDS Interoperability Tests', () => {
   let server: http.Server;
   let userDid: string;
   let testDb: Client;
+  let dbPath: string;
 
   beforeAll(async () => {
     process.env.PASSWORD = 'interop-pass';
-    const dbUrl = `file:interop-${Date.now()}.db`;
-    testDb = createDb(dbUrl);
+    const dbName = `interop-${Date.now()}.db`;
+    dbPath = path.join(__dirname, dbName);
+    testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
     await initDb(testDb);
 
@@ -47,6 +51,11 @@ describe('PDS Interoperability Tests', () => {
     sequencer.close();
     testDb.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const shmPath = `${dbPath}-shm`;
+    const walPath = `${dbPath}-wal`;
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
   });
 
   test('should serve a valid DID document at /.well-known/did.json', async () => {

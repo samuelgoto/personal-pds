@@ -20,6 +20,19 @@ wss.on('connection', (ws, req) => {
   sequencer.addClient(ws, cursor ? parseInt(cursor, 10) : undefined);
 });
 
+// Helper to get system state
+const getSystemMeta = async (key: string): Promise<string | null> => {
+  try {
+    const res = await db.execute({
+      sql: 'SELECT value FROM system_state WHERE key = ?',
+      args: [key]
+    });
+    return res.rows.length > 0 ? (res.rows[0].value as string) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req: express.Request) => {
   const host = req.get('host') || 'localhost';
@@ -47,6 +60,69 @@ const getSingleUser = async (req: express.Request) => {
     root_cid
   };
 };
+
+// --- Dashboard ---
+app.get('/', async (req, res) => {
+  const user = await getSingleUser(req);
+  const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
+  const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
+  const lastPing = await getSystemMeta('last_relay_ping');
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minimal PDS Status</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f4f9; color: #333; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h1 { color: #007bff; }
+        .stat { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; }
+        .stat:last-child { border-bottom: none; }
+        .label { font-weight: bold; }
+        .value { font-family: monospace; color: #666; }
+        .status-ok { color: #28a745; font-weight: bold; }
+        .status-warn { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Personal PDS Dashboard</h1>
+    
+    <div class="card">
+        <h2>Identity</h2>
+        <div class="stat"><span class="label">Handle</span><span class="value">${user?.handle || 'Not Initialized'}</span></div>
+        <div class="stat"><span class="label">DID</span><span class="value">${user?.did || 'N/A'}</span></div>
+        <div class="stat"><span class="label">PDS Domain</span><span class="value">${process.env.DOMAIN || req.get('host')}</span></div>
+    </div>
+
+    <div class="card">
+        <h2>Storage & Activity</h2>
+        <div class="stat"><span class="label">Total Blocks</span><span class="value">${blockCountRes.rows[0].count}</span></div>
+        <div class="stat"><span class="label">Event Log Length</span><span class="value">${eventCountRes.rows[0].count}</span></div>
+        <div class="stat"><span class="label">Current Root CID</span><span class="value" style="font-size: 0.8em;">${user?.root_cid || 'None'}</span></div>
+    </div>
+
+    <div class="card">
+        <h2>Network Status</h2>
+        <div class="stat">
+            <span class="label">Relay Crawler Status</span>
+            <span class="value ${lastPing ? 'status-ok' : 'status-warn'}">
+                ${lastPing ? 'Registered' : 'Not Registered (Run on public domain)'}
+            </span>
+        </div>
+        <div class="stat"><span class="label">Last Relay Ping</span><span class="value">${lastPing || 'Never'}</span></div>
+    </div>
+
+    <div class="card">
+        <h2>System</h2>
+        <div class="stat"><span class="label">Node.js Version</span><span class="value">${process.version}</span></div>
+        <div class="stat"><span class="label">Database Type</span><span class="value">Turso/libSQL</span></div>
+    </div>
+</body>
+</html>
+  `;
+  res.send(html);
+});
 
 // did:web support
 app.get('/.well-known/did.json', async (req, res) => {
