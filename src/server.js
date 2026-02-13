@@ -12,6 +12,12 @@ import { formatDid } from './util.js';
 const app = express();
 app.use(express.json());
 
+// Logging middleware
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  next();
+});
+
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
@@ -46,7 +52,7 @@ const getSystemMeta = async (key) => {
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
   const host = req.get('host') || 'localhost';
-  let handle = host.split(':')[0];
+  let handle = process.env.HANDLE || host.split(':')[0];
   if (handle === 'localhost') handle = 'localhost.test';
   
   const domain = process.env.DOMAIN || host;
@@ -70,6 +76,13 @@ const getSingleUser = async (req) => {
     root_cid
   };
 };
+
+app.get('/.well-known/atproto-did', async (req, res) => {
+  const host = req.get('host') || 'localhost';
+  const domain = process.env.DOMAIN || host;
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(formatDid(domain));
+});
 
 // --- Dashboard ---
 app.get('/', async (req, res) => {
