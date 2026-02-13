@@ -207,8 +207,14 @@ app.get('/.well-known/did.json', async (req, res) => {
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   const { handle } = req.query;
   const user = await getSingleUser(req);
-  if (!user || handle !== user.handle) return res.status(404).json({ error: 'HandleNotFound' });
-  res.json({ did: user.did });
+  if (!user) return res.status(404).json({ error: 'HandleNotFound' });
+  
+  // If no handle provided, or it matches our domain, return our DID
+  if (!handle || handle === user.handle || handle === 'self') {
+    return res.json({ did: user.did });
+  }
+
+  return res.status(404).json({ error: 'HandleNotFound' });
 });
 
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
