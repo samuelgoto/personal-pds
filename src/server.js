@@ -4,6 +4,7 @@ import { createToken, verifyToken } from './auth.js';
 import { TursoStorage, getRootCid } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
+import { createHash } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
@@ -457,6 +458,107 @@ app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
   return app._router.handle({ ...req, url: '/xrpc/app.bsky.feed.getAuthorFeed' }, res);
 });
 
+app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
+  try {
+    const user = await getSingleUser(req);
+    if (!user) return res.status(403).json({ error: 'InvalidRepo' });
+
+    const content = req.body;
+    const mimeType = req.headers['content-type'] || 'application/octet-stream';
+    
+    // Simple hash for CID-like identifier
+    const hash = createHash('sha256').update(content).digest('hex');
+    const cid = `bafybe${hash}`; // Fake CID for now
+
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO blobs (cid, mime_type, content, created_at) VALUES (?, ?, ?, ?)",
+      args: [cid, mimeType, content, new Date().toISOString()]
+    });
+
+    res.json({
+      blob: {
+        $type: 'blob',
+        ref: { $link: cid },
+        mimeType: mimeType,
+        size: content.length,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
+  try {
+    const { cid } = req.query;
+    const result = await db.execute({
+      sql: "SELECT mime_type, content FROM blobs WHERE cid = ?",
+      args: [cid]
+    });
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'BlobNotFound' });
+    }
+
+    const { mime_type, content } = result.rows[0];
+    res.setHeader('Content-Type', mime_type);
+    res.send(Buffer.from(content));
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res) => {
+  try {
+    const { uri } = req.query;
+    const user = await getSingleUser(req);
+    
+    // For single-user PDS, we only resolve our own posts
+    if (!user || !uri.startsWith(`at://${user.did}`)) {
+        return res.status(404).json({ error: 'PostNotFound' });
+    }
+
+    const parts = uri.replace('at://', '').split('/');
+    const collection = parts[1];
+    const rkey = parts[2];
+
+    const storage = new TursoStorage();
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const record = await repoObj.getRecord(collection, rkey);
+
+    if (!record) {
+        return res.status(404).json({ error: 'PostNotFound' });
+    }
+
+    const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    const author = {
+        did: user.did,
+        handle: user.handle,
+        displayName: profile?.displayName || user.handle,
+        avatar: profile?.avatar,
+        indexedAt: new Date().toISOString(),
+    };
+
+    res.json({
+        thread: {
+            $type: 'app.bsky.feed.getPostThread#threadViewPost',
+            post: {
+                uri,
+                cid: user.root_cid, // Approximate
+                author,
+                record,
+                replyCount: 0,
+                repostCount: 0,
+                likeCount: 0,
+                indexedAt: record.createdAt || new Date().toISOString(),
+            }
+        }
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
   try {
     const { actor } = req.query;
@@ -522,7 +624,15 @@ app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res) => {
 });
 
 app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res) => {
-  res.json({ notifications: [], cursor: '' });
+  res.json({ 
+    notifications: [], 
+    cursor: undefined,
+    seenAt: new Date().toISOString()
+  });
+});
+
+app.post('/xrpc/app.bsky.notification.updateSeen', auth, async (req, res) => {
+  res.json({});
 });
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {

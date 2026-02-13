@@ -17,6 +17,12 @@ export async function initDb(client) {
       cid TEXT PRIMARY KEY,
       block BLOB NOT NULL
     )`,
+    `CREATE TABLE IF NOT EXISTS blobs (
+      cid TEXT PRIMARY KEY,
+      mime_type TEXT NOT NULL,
+      content BLOB NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       handle TEXT NOT NULL,
