@@ -738,6 +738,32 @@ app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
   res.json({ uri: `at://${user.did}/${collection}/${rkey}`, value: record });
 });
 
+app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
+  try {
+    const { repo } = req.query;
+    const user = await getSingleUser(req);
+    if (!user || (repo !== user.did && repo !== user.handle)) {
+        return res.status(404).json({ error: 'RepoNotFound' });
+    }
+
+    res.json({
+        handle: user.handle,
+        did: user.did,
+        didDoc: undefined, // Standard to leave undefined if using did:web
+        collections: [
+            'app.bsky.actor.profile',
+            'app.bsky.feed.post',
+            'app.bsky.feed.like',
+            'app.bsky.feed.repost',
+            'app.bsky.graph.follow'
+        ],
+        handleIsCorrect: true,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did } = req.query;
   const host = req.get('host') || 'localhost';
