@@ -52,9 +52,8 @@ const getSystemMeta = async (key) => {
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
   const host = req.get('host') || 'localhost';
-  const domain = process.env.DOMAIN || host;
-  let handle = process.env.HANDLE || domain;
-  if (handle === 'localhost') handle = 'localhost.test';
+  const domain = host;
+  const handle = domain === 'localhost' ? 'localhost.test' : domain;
   
   const did = formatDid(domain);
   const privKeyHex = process.env.PRIVATE_KEY;
@@ -79,9 +78,8 @@ const getSingleUser = async (req) => {
 
 app.get('/.well-known/atproto-did', async (req, res) => {
   const host = req.get('host') || 'localhost';
-  const domain = process.env.DOMAIN || host;
   res.setHeader('Content-Type', 'text/plain');
-  res.send(formatDid(domain));
+  res.send(formatDid(host));
 });
 
 // --- Dashboard ---
@@ -150,8 +148,7 @@ app.get('/', async (req, res) => {
 // did:web support
 app.get('/.well-known/did.json', async (req, res) => {
   const host = req.get('host') || 'localhost';
-  const domain = process.env.DOMAIN || host;
-  const did = formatDid(domain);
+  const did = formatDid(host);
   const privKeyHex = process.env.PRIVATE_KEY;
   
   if (!privKeyHex) return res.status(404).send('Not Configured');
@@ -159,7 +156,7 @@ app.get('/.well-known/did.json', async (req, res) => {
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
   
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const serviceEndpoint = `${protocol}://${domain}`;
+  const serviceEndpoint = `${protocol}://${host}`;
 
   res.json({
     "@context": ["https://www.w3.org/ns/did/v1"],
@@ -319,8 +316,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const host = req.get('host') || 'localhost';
-  const domain = process.env.DOMAIN || host;
-  res.json({ availableUserDomains: [domain], did: formatDid(domain) });
+  res.json({ availableUserDomains: [host], did: formatDid(host) });
 });
 
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
@@ -360,8 +356,7 @@ app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did } = req.query;
   const host = req.get('host') || 'localhost';
-  const domain = process.env.DOMAIN || host;
-  if (did !== formatDid(domain)) return res.status(404).json({ error: 'RepoNotFound' });
+  if (did !== formatDid(host)) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();
   if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });

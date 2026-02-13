@@ -6,17 +6,15 @@ import app, { wss } from '../src/server.js';
 import { maybeInitRepo } from '../src/repo.js';
 
 const PORT = process.env.PORT || 3000;
-const DOMAIN = process.env.DOMAIN;
 const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
 
-async function pingRelay() {
-  if (!DOMAIN || DOMAIN.includes('localhost') || DOMAIN.includes('127.0.0.1')) {
-    console.log('Skipping relay ping: PDS is running on localhost or DOMAIN not set.');
+async function pingRelay(hostname) {
+  if (!hostname || hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
+    console.log('Skipping relay ping: PDS is running on localhost or hostname not provided.');
     return;
   }
 
   try {
-    const hostname = new URL(`https://${DOMAIN}`).hostname;
     console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
     await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
       hostname: hostname
@@ -43,10 +41,17 @@ async function initialize() {
   initialized = true;
 }
 
+// Global ping status to ensure we only ping once per session
+let pinged = false;
+
 // Middleware to ensure initialization on serverless platforms
 app.use(async (req, res, next) => {
   try {
     await initialize();
+    if (!pinged && req.get('host')) {
+        pinged = true;
+        pingRelay(req.get('host')).catch(console.error);
+    }
     next();
   } catch (err) {
     res.status(500).send(`Server Initialization Error: ${err.message}`);
@@ -66,7 +71,6 @@ if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
 
     server.listen(PORT, () => {
       console.log(`Minimal PDS listening on port ${PORT}`);
-      pingRelay().catch(console.error);
     });
   }).catch(console.error);
 }
