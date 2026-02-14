@@ -76,18 +76,30 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(verificationMethods.some(m => m.id === '#atproto')).toBe(true);
   });
 
-  test('CORS preflight should allow all required atproto headers', async () => {
+  test('CORS preflight should allow all required atproto and bsky headers', async () => {
+    const requestedHeaders = 'Content-Type, Authorization, atproto-accept-labelers, atproto-proxy-type, atproto-proxy, atproto-proxy-exp, atproto-content-type, x-bsky-topics, x-bsky-active-labelers';
+    
     const res = await axios.options(`${HOST}/xrpc/app.bsky.ageassurance.getState`, {
         headers: {
             'Origin': 'https://bsky.app',
             'Access-Control-Request-Method': 'GET',
-            'Access-Control-Request-Headers': 'Content-Type, Authorization, atproto-proxy'
+            'Access-Control-Request-Headers': requestedHeaders
         }
     });
+    
     expect(res.status).toBe(200);
-    expect(res.headers['access-control-allow-headers']).toContain('atproto-proxy');
     expect(res.headers['access-control-allow-origin']).toBe('https://bsky.app');
-    expect(res.headers['access-control-expose-headers']).toContain('atproto-proxy');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+    
+    const allowedHeaders = res.headers['access-control-allow-headers'].toLowerCase();
+    expect(allowedHeaders).toContain('atproto-accept-labelers');
+    expect(allowedHeaders).toContain('atproto-proxy');
+    expect(allowedHeaders).toContain('x-bsky-topics');
+    expect(allowedHeaders).toContain('x-bsky-active-labelers');
+
+    const exposedHeaders = res.headers['access-control-expose-headers'].toLowerCase();
+    expect(exposedHeaders).toContain('atproto-proxy');
+    expect(exposedHeaders).toContain('x-bsky-active-labelers');
   });
 
   test('resolveDid should return full DID document', async () => {
