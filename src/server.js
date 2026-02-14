@@ -60,9 +60,14 @@ const getSystemMeta = async (key) => {
   }
 };
 
+// Helper to get the current host safely
+const getHost = (req) => {
+  return (req.headers['x-forwarded-host'] || req.get('host') || 'localhost').split(':')[0];
+};
+
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
-  const host = req.get('host') || 'localhost';
+  const host = getHost(req);
   const domain = host;
   const handle = domain === 'localhost' ? 'localhost.test' : domain;
   
@@ -105,7 +110,7 @@ const auth = (req, res, next) => {
 
 // --- Endpoints ---
 app.get('/.well-known/atproto-did', async (req, res) => {
-  const host = req.get('host') || 'localhost';
+  const host = getHost(req);
   res.setHeader('Content-Type', 'text/plain');
   res.send(formatDid(host) + '\n');
 });
@@ -184,7 +189,7 @@ app.get('/', async (req, res) => {
 
 // did:web support
 app.get('/.well-known/did.json', async (req, res) => {
-  const host = req.get('host') || 'localhost';
+  const host = getHost(req);
   const did = formatDid(host);
   const privKeyHex = process.env.PRIVATE_KEY;
   
@@ -216,7 +221,10 @@ app.get('/.well-known/did.json', async (req, res) => {
         "publicKeyMultibase": keypair.did().split(':').pop()
       }
     ],
-    "authentication": [`${did}#atproto`]
+    "authentication": [`${did}#atproto`],
+    "assertionMethod": [`${did}#atproto`],
+    "capabilityInvocation": [`${did}#atproto`],
+    "capabilityDelegation": [`${did}#atproto`]
   });
 });
 
