@@ -151,4 +151,39 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(res.status).toBe(200);
     expect(res.data.did).toBe(userDid);
   });
+
+  test('refreshSession should return a new valid token', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    const refreshRes = await axios.post(`${HOST}/xrpc/com.atproto.server.refreshSession`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(refreshRes.status).toBe(200);
+    expect(refreshRes.data.accessJwt).toBeDefined();
+  });
+
+  test('describeServer should be public and ignore invalid tokens', async () => {
+    // No token
+    const res1 = await axios.get(`${HOST}/xrpc/com.atproto.server.describeServer`);
+    expect(res1.status).toBe(200);
+
+    // Invalid token (should still work as the route is public)
+    const res2 = await axios.get(`${HOST}/xrpc/com.atproto.server.describeServer`, {
+        headers: { Authorization: `Bearer invalid-token` }
+    });
+    expect(res2.status).toBe(200);
+  });
+
+  test('protected routes should return 401 for missing/invalid tokens', async () => {
+    await expect(axios.get(`${HOST}/xrpc/com.atproto.server.getSession`))
+        .rejects.toThrow();
+    
+    await expect(axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {
+        headers: { Authorization: `Bearer invalid` }
+    })).rejects.toThrow();
+  });
 });
