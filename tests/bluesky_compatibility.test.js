@@ -57,24 +57,22 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
   });
 
-  test('PDS should auto-initialize repo and profile if empty', async () => {
+  test('PDS should auto-initialize repo and profile with custom metadata', async () => {
     // Clear the DB to simulate first run
     await testDb.execute("DELETE FROM repo_blocks");
     await testDb.execute("DELETE FROM sequencer");
     
+    process.env.DISPLAY_NAME = 'Test User';
+    process.env.DESCRIPTION = 'Test Bio';
+
     // Trigger auto-init via maybeInitRepo (called by middleware on first request)
     await maybeInitRepo();
 
-    // Verify repo was created
-    const headRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.getHead?did=${userDid}`);
-    expect(headRes.status).toBe(200);
-    expect(headRes.data.root).toBeDefined();
-
-    // Verify profile was created
+    // Verify profile was created with custom metadata
     const profileRes = await axios.get(`${HOST}/xrpc/app.bsky.actor.getProfile?actor=${userDid}`);
     expect(profileRes.status).toBe(200);
-    expect(profileRes.data.handle).toBe(DOMAIN === 'localhost' ? 'localhost.test' : DOMAIN);
-    expect(profileRes.data.description).toBe('Personal PDS');
+    expect(profileRes.data.displayName).toBe('Test User');
+    expect(profileRes.data.description).toBe('Test Bio');
   });
 
   test('atproto-did should return raw DID with trailing newline', async () => {

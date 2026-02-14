@@ -134,8 +134,8 @@ export async function maybeInitRepo() {
       rkey: 'self',
       record: {
         $type: 'app.bsky.actor.profile',
-        displayName: domain,
-        description: 'Personal PDS',
+        displayName: process.env.DISPLAY_NAME || domain,
+        description: process.env.DESCRIPTION || 'Personal PDS',
         createdAt: new Date().toISOString(),
       },
     }
