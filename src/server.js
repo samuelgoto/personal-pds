@@ -318,6 +318,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const finalRkey = rkey || Date.now().toString(32);
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record }], keypair);
     
+    const recordCid = await updatedRepo.mst.get(`${collection}/${finalRkey}`);
     const carBlocks = await storage.getRepoBlocks();
     const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
 
@@ -330,7 +331,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: updatedRepo.cid }],
+        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: recordCid }],
         time: new Date().toISOString(),
       }
     });
@@ -353,6 +354,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
     
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Update, collection, rkey, record }], keypair);
 
+    const recordCid = await updatedRepo.mst.get(`${collection}/${rkey}`);
     const carBlocks = await storage.getRepoBlocks();
     const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
 
@@ -365,7 +367,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: updatedRepo.cid }],
+        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: recordCid }],
         time: new Date().toISOString(),
       }
     });
