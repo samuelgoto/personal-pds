@@ -214,4 +214,40 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(Buffer.from(getRes.data)).toEqual(blobData);
     expect(getRes.headers['content-type']).toBe('image/png');
   });
+
+  test('should persist and retrieve birthDate via preferences', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    const testBirthDate = '1985-05-05';
+    
+    // 1. Write birthDate via putPreferences
+    await axios.post(`${HOST}/xrpc/app.bsky.actor.putPreferences`, {
+        preferences: [
+            {
+                $type: 'app.bsky.actor.defs#personalDetailsPref',
+                birthDate: testBirthDate
+            }
+        ]
+    }, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    // 2. Read birthDate via getAccount
+    const accountRes = await axios.get(`${HOST}/xrpc/com.atproto.server.getAccount`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(accountRes.status).toBe(200);
+    expect(accountRes.data.birthDate).toBe(testBirthDate);
+
+    // 3. Verify getState returns verified
+    const stateRes = await axios.get(`${HOST}/xrpc/app.bsky.ageassurance.getState`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(stateRes.data.status).toBe('verified');
+  });
 });
