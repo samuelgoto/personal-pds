@@ -187,7 +187,11 @@ app.get('/.well-known/did.json', async (req, res) => {
   const serviceEndpoint = `${protocol}://${host}`;
 
   res.json({
-    "@context": ["https://www.w3.org/ns/did/v1"],
+    "@context": [
+        "https://www.w3.org/ns/did/v1",
+        "https://w3id.org/security/multiconf/v1",
+        "https://w3id.org/security/suites/secp256k1-2019/v1"
+    ],
     "id": did,
     "alsoKnownAs": [`at://${host}`],
     "service": [{
@@ -199,12 +203,6 @@ app.get('/.well-known/did.json', async (req, res) => {
       {
         "id": `${did}#atproto`,
         "type": "Multikey",
-        "controller": did,
-        "publicKeyMultibase": keypair.did().split(':').pop()
-      },
-      {
-        "id": `${did}#atproto-legacy`,
-        "type": "EcdsaSecp256k1VerificationKey2019",
         "controller": did,
         "publicKeyMultibase": keypair.did().split(':').pop()
       }
