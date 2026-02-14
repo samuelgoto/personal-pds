@@ -107,7 +107,16 @@ const auth = (req, res, next) => {
 app.get('/.well-known/atproto-did', async (req, res) => {
   const host = req.get('host') || 'localhost';
   res.setHeader('Content-Type', 'text/plain');
-  res.send(formatDid(host));
+  res.send(formatDid(host) + '\n');
+});
+
+app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, res) => {
+  res.json({
+    rotationKeys: [],
+    alsoKnownAs: [],
+    verificationMethods: {},
+    services: {}
+  });
 });
 
 // --- Dashboard ---
@@ -765,6 +774,22 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
             'app.bsky.graph.follow'
         ],
         handleIsCorrect: true,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
+  try {
+    const { did } = req.query;
+    const user = await getSingleUser(req);
+    if (!user || did !== user.did) {
+        return res.status(404).json({ error: 'RepoNotFound' });
+    }
+
+    res.json({
+        root: user.root_cid,
     });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
