@@ -1,4 +1,4 @@
-import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile } from '@atproto/repo';
+import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile, WriteOpAction } from '@atproto/repo';
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
@@ -109,7 +109,7 @@ export async function maybeInitRepo() {
   if (rootCid) return;
 
   const privKeyHex = process.env.PRIVATE_KEY;
-  const domain = process.env.DOMAIN || 'localhost:3000';
+  const domain = (process.env.DOMAIN || 'localhost:3000').split(':')[0];
   
   if (!privKeyHex) {
     console.log('PRIVATE_KEY not found. Skipping repo auto-init.');
@@ -121,8 +121,27 @@ export async function maybeInitRepo() {
 
   console.log(`Auto-initializing PDS repo for ${did}...`);
   const storage = new TursoStorage();
-  const repo = await loadRepo(storage, did, keypair, null);
   
+  // 1. Initial empty repo
+  let repo = await loadRepo(storage, did, keypair, null);
+  
+  // 2. Create default profile
+  console.log(`Creating default profile...`);
+  repo = await repo.applyWrites([
+    {
+      action: WriteOpAction.Create,
+      collection: 'app.bsky.actor.profile',
+      rkey: 'self',
+      record: {
+        $type: 'app.bsky.actor.profile',
+        displayName: domain,
+        description: 'Personal PDS',
+        createdAt: new Date().toISOString(),
+      },
+    }
+  ], keypair);
+
+  const recordCid = await repo.data.get('app.bsky.actor.profile/self');
   const carBlocks = await storage.getRepoBlocks();
   const blocks = await blocksToCarFile(repo.cid, carBlocks);
 
@@ -135,7 +154,7 @@ export async function maybeInitRepo() {
       blocks: blocks,
       rev: repo.commit.rev,
       since: null,
-      ops: [],
+      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid || repo.cid }],
       time: new Date().toISOString(),
     }
   });
