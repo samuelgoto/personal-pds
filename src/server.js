@@ -228,6 +228,49 @@ app.get('/.well-known/did.json', async (req, res) => {
   });
 });
 
+app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
+  try {
+    const { did } = req.query;
+    const user = await getSingleUser(req);
+    if (!user || did !== user.did) return res.status(404).json({ error: 'DidNotFound' });
+
+    const host = getHost(req);
+    const privKeyHex = process.env.PRIVATE_KEY;
+    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+    const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
+    const serviceEndpoint = `${protocol}://${host}`;
+
+    res.json({
+        "@context": [
+            "https://www.w3.org/ns/did/v1",
+            "https://w3id.org/security/multiconf/v1",
+            "https://w3id.org/security/suites/secp256k1-2019/v1"
+        ],
+        "id": user.did,
+        "alsoKnownAs": [`at://${host}`],
+        "verificationMethod": [
+          {
+            "id": `${user.did}#atproto`,
+            "type": "Multikey",
+            "controller": user.did,
+            "publicKeyMultibase": keypair.did().split(':').pop()
+          }
+        ],
+        "authentication": [`${user.did}#atproto`],
+        "assertionMethod": [`${user.did}#atproto`],
+        "capabilityInvocation": [`${user.did}#atproto`],
+        "capabilityDelegation": [`${user.did}#atproto`],
+        "service": [{
+          "id": "#atproto_pds",
+          "type": "AtprotoPersonalDataServer",
+          "serviceEndpoint": serviceEndpoint
+        }]
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   const { handle } = req.query;
   const user = await getSingleUser(req);
