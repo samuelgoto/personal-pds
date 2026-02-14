@@ -188,20 +188,17 @@ app.get('/', async (req, res) => {
   res.send(html);
 });
 
-// did:web support
-app.get('/.well-known/did.json', async (req, res) => {
-  const host = getHost(req);
+// Helper to generate the DID document
+const getDidDoc = async (req, host) => {
   const did = formatDid(host);
   const privKeyHex = process.env.PRIVATE_KEY;
-  
-  if (!privKeyHex) return res.status(404).send('Not Configured');
-  
+  if (!privKeyHex) return null;
+
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
-  
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
+  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production' || !host.includes('localhost')) ? 'https' : 'http';
   const serviceEndpoint = `${protocol}://${host}`;
 
-  res.json({
+  return {
     "@context": [
         "https://www.w3.org/ns/did/v1",
         "https://w3id.org/security/multiconf/v1",
@@ -209,11 +206,6 @@ app.get('/.well-known/did.json', async (req, res) => {
     ],
     "id": did,
     "alsoKnownAs": [`at://${host}`],
-    "service": [{
-      "id": "#atproto_pds",
-      "type": "AtprotoPersonalDataServer",
-      "serviceEndpoint": serviceEndpoint
-    }],
     "verificationMethod": [
       {
         "id": "#atproto",
@@ -225,8 +217,21 @@ app.get('/.well-known/did.json', async (req, res) => {
     "authentication": ["#atproto"],
     "assertionMethod": ["#atproto"],
     "capabilityInvocation": ["#atproto"],
-    "capabilityDelegation": ["#atproto"]
-  });
+    "capabilityDelegation": ["#atproto"],
+    "service": [{
+      "id": "#atproto_pds",
+      "type": "AtprotoPersonalDataServer",
+      "serviceEndpoint": serviceEndpoint
+    }]
+  };
+};
+
+// did:web support
+app.get('/.well-known/did.json', async (req, res) => {
+  const host = getHost(req);
+  const doc = await getDidDoc(req, host);
+  if (!doc) return res.status(404).send('Not Configured');
+  res.json(doc);
 });
 
 app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
@@ -236,37 +241,10 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
     if (!user || did !== user.did) return res.status(404).json({ error: 'DidNotFound' });
 
     const host = getHost(req);
-    const privKeyHex = process.env.PRIVATE_KEY;
-    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
-    const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-    const serviceEndpoint = `${protocol}://${host}`;
+    const doc = await getDidDoc(req, host);
+    if (!doc) return res.status(404).json({ error: 'DidNotFound' });
 
-    res.json({
-        "@context": [
-            "https://www.w3.org/ns/did/v1",
-            "https://w3id.org/security/multiconf/v1",
-            "https://w3id.org/security/suites/secp256k1-2019/v1"
-        ],
-        "id": user.did,
-        "alsoKnownAs": [`at://${host}`],
-        "verificationMethod": [
-          {
-            "id": "#atproto",
-            "type": "Multikey",
-            "controller": user.did,
-            "publicKeyMultibase": keypair.did().split(':').pop()
-          }
-        ],
-        "authentication": ["#atproto"],
-        "assertionMethod": ["#atproto"],
-        "capabilityInvocation": ["#atproto"],
-        "capabilityDelegation": ["#atproto"],
-        "service": [{
-          "id": "#atproto_pds",
-          "type": "AtprotoPersonalDataServer",
-          "serviceEndpoint": serviceEndpoint
-        }]
-    });
+    res.json(doc);
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
   }
@@ -814,10 +792,13 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
         return res.status(404).json({ error: 'RepoNotFound' });
     }
 
+    const host = getHost(req);
+    const didDoc = await getDidDoc(req, host);
+
     res.json({
         handle: user.handle,
         did: user.did,
-        didDoc: undefined, // Standard to leave undefined if using did:web
+        didDoc: didDoc,
         collections: [
             'app.bsky.actor.profile',
             'app.bsky.feed.post',
