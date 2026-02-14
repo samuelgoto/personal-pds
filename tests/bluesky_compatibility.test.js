@@ -186,4 +186,32 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
         headers: { Authorization: `Bearer invalid` }
     })).rejects.toThrow();
   });
+
+  test('should upload and retrieve blobs', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    const blobData = Buffer.from('fake-image-data');
+    const uploadRes = await axios.post(`${HOST}/xrpc/com.atproto.repo.uploadBlob`, blobData, {
+        headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'image/png'
+        }
+    });
+
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.data.blob.ref.$link).toBeDefined();
+
+    const cid = uploadRes.data.blob.ref.$link;
+    const getRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.getBlob?cid=${cid}`, {
+        responseType: 'arraybuffer'
+    });
+
+    expect(getRes.status).toBe(200);
+    expect(Buffer.from(getRes.data)).toEqual(blobData);
+    expect(getRes.headers['content-type']).toBe('image/png');
+  });
 });
