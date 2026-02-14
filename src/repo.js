@@ -3,8 +3,10 @@ import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
 import { cborDecode } from '@atproto/common';
+import axios from 'axios';
+import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
-import { formatDid } from './util.js';
+import { formatDid, getStaticAvatar } from './util.js';
 
 export class TursoStorage extends ReadableBlockstore {
   blocks = new BlockMap();
@@ -125,7 +127,49 @@ export async function maybeInitRepo() {
   // 1. Initial empty repo
   let repo = await loadRepo(storage, did, keypair, null);
   
-  // 2. Create default profile
+  // 2. Handle Avatar if provided
+  let avatarBlob = undefined;
+  const staticAvatar = getStaticAvatar();
+  
+  if (staticAvatar) {
+    console.log(`Using static avatar file: ${staticAvatar.cid}`);
+    await db.execute({
+        sql: "INSERT OR REPLACE INTO blobs (cid, mime_type, content, created_at) VALUES (?, ?, ?, ?)",
+        args: [staticAvatar.cid, staticAvatar.mimeType, staticAvatar.content, new Date().toISOString()]
+    });
+    avatarBlob = {
+        $type: 'blob',
+        ref: { $link: staticAvatar.cid },
+        mimeType: staticAvatar.mimeType,
+        size: staticAvatar.size,
+    };
+  } else if (process.env.AVATAR_URL) {
+    try {
+        console.log(`Fetching avatar from ${process.env.AVATAR_URL}...`);
+        const response = await axios.get(process.env.AVATAR_URL, { responseType: 'arraybuffer' });
+        const content = Buffer.from(response.data);
+        const mimeType = response.headers['content-type'] || 'image/png';
+        const hash = createHash('sha256').update(content).digest('hex');
+        const cid = `bafybe${hash}`;
+
+        await db.execute({
+            sql: "INSERT OR REPLACE INTO blobs (cid, mime_type, content, created_at) VALUES (?, ?, ?, ?)",
+            args: [cid, mimeType, content, new Date().toISOString()]
+        });
+
+        avatarBlob = {
+            $type: 'blob',
+            ref: { $link: cid },
+            mimeType: mimeType,
+            size: content.length,
+        };
+        console.log(`Avatar stored as blob: ${cid}`);
+    } catch (err) {
+        console.error('Failed to fetch avatar during auto-init:', err.message);
+    }
+  }
+
+  // 3. Create default profile
   console.log(`Creating default profile...`);
   repo = await repo.applyWrites([
     {
@@ -136,6 +180,7 @@ export async function maybeInitRepo() {
         $type: 'app.bsky.actor.profile',
         displayName: process.env.DISPLAY_NAME || domain,
         description: process.env.DESCRIPTION || 'Personal PDS',
+        avatar: avatarBlob,
         createdAt: new Date().toISOString(),
       },
     }

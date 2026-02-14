@@ -8,7 +8,7 @@ import { createHash } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
-import { formatDid } from './util.js';
+import { formatDid, getStaticAvatar } from './util.js';
 
 const app = express();
 
@@ -627,6 +627,14 @@ app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', l
 app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
   try {
     const { cid } = req.query;
+    
+    // Check for static avatar fallback
+    const staticAvatar = getStaticAvatar();
+    if (staticAvatar && staticAvatar.cid === cid) {
+        res.setHeader('Content-Type', staticAvatar.mimeType);
+        return res.send(staticAvatar.content);
+    }
+
     const result = await db.execute({
       sql: "SELECT mime_type, content FROM blobs WHERE cid = ?",
       args: [cid]
