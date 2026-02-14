@@ -7,6 +7,7 @@ import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
 import { maybeInitRepo } from '../src/repo.js';
 import { formatDid } from '../src/util.js';
+import { cborDecode } from '@atproto/common';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -249,5 +250,48 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
         headers: { Authorization: `Bearer ${token}` }
     });
     expect(stateRes.data.status).toBe('verified');
+  });
+
+  test('commit events should report record CID in ops, not commit CID', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    // 1. Create a record
+    const createRes = await axios.post(`${HOST}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.post',
+      record: { $type: 'app.bsky.feed.post', text: 'CID test', createdAt: new Date().toISOString() }
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const recordCid = createRes.data.cid;
+    const commitCid = createRes.data.commit.cid;
+
+    // The record CID and commit CID must be different
+    expect(recordCid).not.toBe(commitCid);
+
+    // 2. Fetch the event from sequencer
+    const syncRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.subscribeRepos`);
+    
+    // subscribeRepos returns a binary stream of frames.
+    // Each frame is [header_cbor][body_cbor].
+    // Our formatEvent implementation: Buffer.concat([header, body])
+    const data = Buffer.from(syncRes.data);
+    
+    // This is a bit of a hacky parse but works for our test
+    // Search for the commit cid in the binary blob to find the right event
+    // or just look at the last 100 events.
+    
+    const eventsRes = await testDb.execute("SELECT event FROM sequencer ORDER BY seq DESC LIMIT 1");
+    const lastEvent = cborDecode(new Uint8Array(eventsRes.rows[0].event));
+    
+    expect(lastEvent.repo).toBe(userDid);
+    expect(lastEvent.commit.toString()).toBe(commitCid);
+    expect(lastEvent.ops[0].cid.toString()).toBe(recordCid);
+    expect(lastEvent.ops[0].cid.toString()).not.toBe(commitCid);
   });
 });

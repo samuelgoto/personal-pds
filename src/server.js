@@ -318,7 +318,12 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const finalRkey = rkey || Date.now().toString(32);
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record }], keypair);
     
-    const recordCid = await updatedRepo.mst.get(`${collection}/${finalRkey}`);
+    // The path in MST is "collection/rkey", accessed via .data.get()
+    const recordCid = await updatedRepo.data.get(collection + '/' + finalRkey);
+    if (!recordCid) {
+        console.error(`Failed to find CID in MST for path: ${collection}/${finalRkey}`);
+    }
+
     const carBlocks = await storage.getRepoBlocks();
     const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
 
@@ -331,14 +336,22 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: recordCid }],
+        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: recordCid || updatedRepo.cid }],
         time: new Date().toISOString(),
       }
     });
     
-    res.json({ uri: `at://${user.did}/${collection}/${finalRkey}`, cid: updatedRepo.cid.toString() });
+    res.json({ 
+        uri: `at://${user.did}/${collection}/${finalRkey}`, 
+        cid: recordCid?.toString() || updatedRepo.cid.toString(),
+        commit: {
+            cid: updatedRepo.cid.toString(),
+            rev: updatedRepo.commit.rev
+        }
+    });
   } catch (err) {
-    res.status(500).json({ error: 'InternalServerError' });
+    console.error('Error in createRecord:', err);
+    res.status(500).json({ error: 'InternalServerError', message: err.message });
   }
 });
 
@@ -354,7 +367,11 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
     
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Update, collection, rkey, record }], keypair);
 
-    const recordCid = await updatedRepo.mst.get(`${collection}/${rkey}`);
+    const recordCid = await updatedRepo.data.get(collection + '/' + rkey);
+    if (!recordCid) {
+        console.error(`Failed to find CID in MST for path: ${collection}/${rkey}`);
+    }
+
     const carBlocks = await storage.getRepoBlocks();
     const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
 
@@ -367,12 +384,19 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: recordCid }],
+        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: recordCid || updatedRepo.cid }],
         time: new Date().toISOString(),
       }
     });
     
-    res.json({ uri: `at://${user.did}/${collection}/${rkey}`, cid: updatedRepo.cid.toString() });
+    res.json({ 
+        uri: `at://${user.did}/${collection}/${rkey}`, 
+        cid: recordCid?.toString() || updatedRepo.cid.toString(),
+        commit: {
+            cid: updatedRepo.cid.toString(),
+            rev: updatedRepo.commit.rev
+        }
+    });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
   }
