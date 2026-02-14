@@ -215,16 +215,16 @@ app.get('/.well-known/did.json', async (req, res) => {
     }],
     "verificationMethod": [
       {
-        "id": `${did}#atproto`,
+        "id": "#atproto",
         "type": "Multikey",
         "controller": did,
         "publicKeyMultibase": keypair.did().split(':').pop()
       }
     ],
-    "authentication": [`${did}#atproto`],
-    "assertionMethod": [`${did}#atproto`],
-    "capabilityInvocation": [`${did}#atproto`],
-    "capabilityDelegation": [`${did}#atproto`]
+    "authentication": ["#atproto"],
+    "assertionMethod": ["#atproto"],
+    "capabilityInvocation": ["#atproto"],
+    "capabilityDelegation": ["#atproto"]
   });
 });
 
@@ -250,16 +250,16 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
         "alsoKnownAs": [`at://${host}`],
         "verificationMethod": [
           {
-            "id": `${user.did}#atproto`,
+            "id": "#atproto",
             "type": "Multikey",
             "controller": user.did,
             "publicKeyMultibase": keypair.did().split(':').pop()
           }
         ],
-        "authentication": [`${user.did}#atproto`],
-        "assertionMethod": [`${user.did}#atproto`],
-        "capabilityInvocation": [`${user.did}#atproto`],
-        "capabilityDelegation": [`${user.did}#atproto`],
+        "authentication": ["#atproto"],
+        "assertionMethod": ["#atproto"],
+        "capabilityInvocation": ["#atproto"],
+        "capabilityDelegation": ["#atproto"],
         "service": [{
           "id": "#atproto_pds",
           "type": "AtprotoPersonalDataServer",
