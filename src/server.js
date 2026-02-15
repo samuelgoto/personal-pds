@@ -8,7 +8,7 @@ import { createHash } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
-import { formatDid, getStaticAvatar } from './util.js';
+import { formatDid, getStaticAvatar, createTid } from './util.js';
 
 const app = express();
 
@@ -315,7 +315,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     
-    const finalRkey = rkey || Date.now().toString(32);
+    const finalRkey = rkey || createTid();
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record }], keypair);
     
     // The path in MST is "collection/rkey", accessed via .data.get()
@@ -434,6 +434,67 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
     res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
+  try {
+    const { repo, writes, swapCommit } = req.body;
+    const user = await getSingleUser(req);
+    if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
+
+    const storage = new TursoStorage();
+    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+
+    const repoWrites = writes.map(w => {
+        if (w.$type === 'com.atproto.repo.applyWrites#create') {
+            return { action: WriteOpAction.Create, collection: w.collection, rkey: w.rkey || createTid(), record: w.value };
+        } else if (w.$type === 'com.atproto.repo.applyWrites#update') {
+            return { action: WriteOpAction.Update, collection: w.collection, rkey: w.rkey, record: w.value };
+        } else if (w.$type === 'com.atproto.repo.applyWrites#delete') {
+            return { action: WriteOpAction.Delete, collection: w.collection, rkey: w.rkey };
+        }
+        throw new Error(`Unknown write action: ${w.$type}`);
+    });
+
+    const updatedRepo = await repoObj.applyWrites(repoWrites, keypair);
+
+    // Prepare ops for the sequencer event
+    const ops = [];
+    for (const w of repoWrites) {
+        let cid = null;
+        if (w.action !== WriteOpAction.Delete) {
+            cid = await updatedRepo.data.get(w.collection + '/' + w.rkey);
+        }
+        ops.push({
+            action: w.action.toLowerCase(),
+            path: `${w.collection}/${w.rkey}`,
+            cid: cid
+        });
+    }
+
+    const carBlocks = await storage.getRepoBlocks();
+    const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
+
+    await sequencer.sequenceEvent({
+      type: 'commit',
+      did: user.did,
+      event: {
+        repo: user.did,
+        commit: updatedRepo.cid,
+        blocks: blocks,
+        rev: updatedRepo.commit.rev,
+        since: repoObj.commit.rev,
+        ops: ops,
+        time: new Date().toISOString(),
+      }
+    });
+
+    res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
+  } catch (err) {
+    console.error('Error in applyWrites:', err);
+    res.status(500).json({ error: 'InternalServerError', message: err.message });
   }
 });
 

@@ -362,4 +362,41 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(res.status).toBe(200);
     expect(res.data.drafts).toEqual([]);
   });
+
+  test('applyWrites should handle bulk operations and sequence events', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    // Create multiple records in one batch
+    const applyRes = await axios.post(`${HOST}/xrpc/com.atproto.repo.applyWrites`, {
+      repo: userDid,
+      writes: [
+        {
+          $type: 'com.atproto.repo.applyWrites#create',
+          collection: 'app.bsky.feed.post',
+          value: { $type: 'app.bsky.feed.post', text: 'Apply 1', createdAt: new Date().toISOString() }
+        },
+        {
+          $type: 'com.atproto.repo.applyWrites#create',
+          collection: 'app.bsky.feed.post',
+          value: { $type: 'app.bsky.feed.post', text: 'Apply 2', createdAt: new Date().toISOString() }
+        }
+      ]
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    expect(applyRes.status).toBe(200);
+    expect(applyRes.data.commit.cid).toBeDefined();
+
+    // Verify sequencer recorded both operations
+    const eventsRes = await testDb.execute("SELECT event FROM sequencer ORDER BY seq DESC LIMIT 1");
+    const lastEvent = cborDecode(new Uint8Array(eventsRes.rows[0].event));
+    expect(lastEvent.ops.length).toBe(2);
+    expect(lastEvent.ops[0].action).toBe('create');
+    expect(lastEvent.ops[1].action).toBe('create');
+  });
 });
