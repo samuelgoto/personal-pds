@@ -348,4 +348,18 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(res.status).toBe(200);
     expect(res.data.suggestions).toEqual([]);
   });
+
+  test('getDrafts should return empty drafts', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    const res = await axios.get(`${HOST}/xrpc/app.bsky.draft.getDrafts`, {
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.drafts).toEqual([]);
+  });
 });

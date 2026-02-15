@@ -783,6 +783,10 @@ app.post('/xrpc/app.bsky.notification.updateSeen', auth, async (req, res) => {
   res.json({});
 });
 
+app.get('/xrpc/app.bsky.draft.getDrafts', auth, async (req, res) => {
+  res.json({ drafts: [] });
+});
+
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const host = req.get('host') || 'localhost';
   res.json({ availableUserDomains: [host], did: formatDid(host) });
