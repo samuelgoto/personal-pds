@@ -730,6 +730,10 @@ app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res) => {
   res.json({ followers: [] });
 });
 
+app.get('/xrpc/app.bsky.graph.getSuggestedFollowsByActor', async (req, res) => {
+  res.json({ suggestions: [] });
+});
+
 app.get('/xrpc/app.bsky.graph.getMutes', auth, async (req, res) => {
   res.json({ mutes: [] });
 });

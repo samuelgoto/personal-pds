@@ -342,4 +342,10 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
         if (fs.existsSync('avatar.png')) fs.unlinkSync('avatar.png');
     }
   });
+
+  test('getSuggestedFollowsByActor should return empty suggestions', async () => {
+    const res = await axios.get(`${HOST}/xrpc/app.bsky.graph.getSuggestedFollowsByActor?actor=${userDid}`);
+    expect(res.status).toBe(200);
+    expect(res.data.suggestions).toEqual([]);
+  });
 });
