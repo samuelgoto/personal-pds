@@ -599,9 +599,8 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res) => {
+const getAuthorFeed = async (req, res, actor, limit) => {
   try {
-    const { actor, limit } = req.query;
     const user = await getSingleUser(req);
     if (!user || (actor !== user.did && actor !== user.handle)) {
         return res.json({ feed: [] });
@@ -643,16 +642,19 @@ app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res) => {
         feed: feed.slice(0, parseInt(limit || '50', 10)),
     });
   } catch (err) {
+    console.error('Error in getAuthorFeed:', err);
     res.status(500).json({ error: 'InternalServerError' });
   }
+};
+
+app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res) => {
+  return getAuthorFeed(req, res, req.query.actor, req.query.limit);
 });
 
 app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
-  const host = req.get('host') || 'localhost';
-  const domain = host;
-  req.query.actor = domain === 'localhost' ? 'did:web:localhost.test' : formatDid(domain);
-  // Forward to getAuthorFeed
-  return app._router.handle({ ...req, url: '/xrpc/app.bsky.feed.getAuthorFeed' }, res);
+  const host = getHost(req);
+  const userDid = formatDid(host);
+  return getAuthorFeed(req, res, userDid, req.query.limit);
 });
 
 app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
