@@ -615,6 +615,11 @@ const getAuthorFeed = async (req, res, actor, limit) => {
         handle: user.handle,
         displayName: profile?.displayName || user.handle,
         avatar: profile?.avatar,
+        viewer: {
+            muted: false,
+            blockedBy: false,
+        },
+        labels: [],
         indexedAt: new Date().toISOString(),
     };
 
@@ -631,6 +636,8 @@ const getAuthorFeed = async (req, res, actor, limit) => {
                 repostCount: 0,
                 likeCount: 0,
                 indexedAt: rec.record.createdAt || new Date().toISOString(),
+                viewer: {},
+                labels: [],
             }
         });
       }
@@ -750,6 +757,11 @@ const getPostThread = async (req, res, uri) => {
         handle: user.handle,
         displayName: profile?.displayName || user.handle,
         avatar: profile?.avatar,
+        viewer: {
+            muted: false,
+            blockedBy: false,
+        },
+        labels: [],
         indexedAt: new Date().toISOString(),
     };
 
@@ -765,7 +777,10 @@ const getPostThread = async (req, res, uri) => {
                 repostCount: 0,
                 likeCount: 0,
                 indexedAt: record.createdAt || new Date().toISOString(),
-            }
+                viewer: {},
+                labels: [],
+            },
+            replies: [],
         }
     });
   } catch (err) {
