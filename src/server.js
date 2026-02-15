@@ -722,9 +722,13 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
 const getPostThread = async (req, res, uri) => {
   try {
     const user = await getSingleUser(req);
-    
-    // For single-user PDS, we only resolve our own posts
-    if (!user || !uri.startsWith(`at://${user.did}`)) {
+    if (!user) return res.status(404).json({ error: 'PostNotFound' });
+
+    // Support both at://did:web:pds.sgo.to and at://pds.sgo.to
+    const isLocalDid = uri.startsWith(`at://${user.did}`);
+    const isLocalHandle = uri.startsWith(`at://${user.handle}`);
+
+    if (!isLocalDid && !isLocalHandle) {
         return res.status(404).json({ error: 'PostNotFound' });
     }
 

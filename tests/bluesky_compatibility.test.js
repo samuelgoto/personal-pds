@@ -451,4 +451,29 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(res.status).toBe(200);
     expect(res.data.feed).toEqual([]);
   });
+
+  test('getPostThreadV2 should resolve handle-based URIs', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    // 1. Create a post
+    const createRes = await axios.post(`${HOST}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.post',
+      record: { $type: 'app.bsky.feed.post', text: 'Handle URI test', createdAt: new Date().toISOString() }
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const uri = createRes.data.uri;
+    const handleUri = uri.replace(userDid, 'localhost.test');
+
+    // 2. Fetch via getPostThreadV2 using handle
+    const res = await axios.get(`${HOST}/xrpc/app.bsky.unspecced.getPostThreadV2?anchor=${encodeURIComponent(handleUri)}`);
+    expect(res.status).toBe(200);
+    expect(res.data.thread.post.record.text).toBe('Handle URI test');
+  });
 });
