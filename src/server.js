@@ -713,9 +713,8 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res) => {
+const getPostThread = async (req, res, uri) => {
   try {
-    const { uri } = req.query;
     const user = await getSingleUser(req);
     
     // For single-user PDS, we only resolve our own posts
@@ -760,8 +759,17 @@ app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res) => {
         }
     });
   } catch (err) {
+    console.error('Error in getPostThread:', err);
     res.status(500).json({ error: 'InternalServerError' });
   }
+};
+
+app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res) => {
+  return getPostThread(req, res, req.query.uri);
+});
+
+app.get('/xrpc/app.bsky.unspecced.getPostThreadV2', async (req, res) => {
+  return getPostThread(req, res, req.query.anchor);
 });
 
 app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {

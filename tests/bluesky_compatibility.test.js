@@ -399,4 +399,28 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(lastEvent.ops[0].action).toBe('create');
     expect(lastEvent.ops[1].action).toBe('create');
   });
+
+  test('getPostThreadV2 should return post data via anchor', async () => {
+    const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+        identifier: 'localhost.test',
+        password: 'compat-pass'
+    });
+    const token = loginRes.data.accessJwt;
+
+    // 1. Create a post
+    const createRes = await axios.post(`${HOST}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.post',
+      record: { $type: 'app.bsky.feed.post', text: 'Thread test', createdAt: new Date().toISOString() }
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const uri = createRes.data.uri;
+
+    // 2. Fetch via getPostThreadV2
+    const res = await axios.get(`${HOST}/xrpc/app.bsky.unspecced.getPostThreadV2?anchor=${encodeURIComponent(uri)}`);
+    expect(res.status).toBe(200);
+    expect(res.data.thread.post.uri).toBe(uri);
+  });
 });
