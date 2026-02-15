@@ -609,17 +609,22 @@ const getAuthorFeed = async (req, res, actor, limit) => {
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     
     const author = {
         did: user.did,
         handle: user.handle,
         displayName: profile?.displayName || user.handle,
         avatar: profile?.avatar,
+        associated: {
+            activitySubscription: { allowSubscriptions: 'followers' }
+        },
         viewer: {
             muted: false,
             blockedBy: false,
         },
         labels: [],
+        createdAt: repoCreatedAt,
         indexedAt: new Date().toISOString(),
     };
 
@@ -752,16 +757,22 @@ const getPostThread = async (req, res, uri) => {
     }
 
     const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
+
     const author = {
         did: user.did,
         handle: user.handle,
         displayName: profile?.displayName || user.handle,
         avatar: profile?.avatar,
+        associated: {
+            activitySubscription: { allowSubscriptions: 'followers' }
+        },
         viewer: {
             muted: false,
             blockedBy: false,
         },
         labels: [],
+        createdAt: repoCreatedAt,
         indexedAt: new Date().toISOString(),
     };
 
