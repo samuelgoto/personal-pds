@@ -62,7 +62,7 @@ const getSystemMeta = async (key) => {
 };
 
 // Helper to get the current host safely
-const getHost = (req) => {
+export const getHost = (req) => {
   return (req.headers['x-forwarded-host'] || req.get('host') || 'localhost').split(':')[0];
 };
 
@@ -186,6 +186,20 @@ app.get('/', async (req, res) => {
 </html>
   `;
   res.send(html);
+});
+
+app.get('/debug/ping-relay', async (req, res) => {
+  try {
+    const { pingRelay } = await import('../api/index.js');
+    const host = getHost(req);
+    const result = await pingRelay(host);
+    res.json({
+        host,
+        result
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Helper to generate the DID document

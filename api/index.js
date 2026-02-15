@@ -2,21 +2,22 @@ import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
 import { initDb, db } from '../src/db.js';
-import app, { wss } from '../src/server.js';
+import app, { wss, getHost } from '../src/server.js';
 import { maybeInitRepo } from '../src/repo.js';
 
 const PORT = process.env.PORT || 3000;
 const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
 
-async function pingRelay(hostname) {
+export async function pingRelay(hostname) {
   if (!hostname || hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
-    console.log('Skipping relay ping: PDS is running on localhost or hostname not provided.');
-    return;
+    const msg = 'Skipping relay ping: PDS is running on localhost or hostname not provided.';
+    console.log(msg);
+    return { success: false, message: msg };
   }
 
   try {
     console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
-    await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
+    const res = await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
       hostname: hostname
     });
     await db.execute({
@@ -24,8 +25,11 @@ async function pingRelay(hostname) {
       args: [new Date().toISOString()]
     });
     console.log('Relay notified successfully.');
+    return { success: true, data: res.data };
   } catch (err) {
-    console.error('Failed to notify relay:', err.response?.data || err.message);
+    const errorMsg = err.response?.data || err.message;
+    console.error('Failed to notify relay:', errorMsg);
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -48,9 +52,10 @@ let pinged = false;
 app.use(async (req, res, next) => {
   try {
     await initialize();
-    if (!pinged && req.get('host')) {
+    const host = getHost(req);
+    if (!pinged && host) {
         pinged = true;
-        pingRelay(req.get('host')).catch(console.error);
+        pingRelay(host).catch(console.error);
     }
     next();
   } catch (err) {
