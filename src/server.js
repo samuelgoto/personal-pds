@@ -979,6 +979,22 @@ app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   }
 });
 
+app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
+  try {
+    const user = await getSingleUser(req);
+    if (!user) return res.json({ repos: [] });
+
+    res.json({
+        repos: [{
+            did: user.did,
+            head: user.root_cid,
+        }]
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
   try {
     const { cursor } = req.query;

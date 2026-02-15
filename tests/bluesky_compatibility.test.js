@@ -476,4 +476,11 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(res.status).toBe(200);
     expect(res.data.thread.post.record.text).toBe('Handle URI test');
   });
+
+  test('listRepos should return the local user repo', async () => {
+    const res = await axios.get(`${HOST}/xrpc/com.atproto.sync.listRepos`);
+    expect(res.status).toBe(200);
+    expect(res.data.repos[0].did).toBe(userDid);
+    expect(res.data.repos[0].head).toBeDefined();
+  });
 });
