@@ -767,7 +767,7 @@ const getPostThread = async (req, res, uri) => {
 
     res.json({
         thread: {
-            $type: 'app.bsky.feed.getPostThread#threadViewPost',
+            $type: 'app.bsky.feed.defs#threadViewPost',
             post: {
                 uri,
                 cid: user.root_cid, // Approximate
@@ -776,11 +776,14 @@ const getPostThread = async (req, res, uri) => {
                 replyCount: 0,
                 repostCount: 0,
                 likeCount: 0,
+                quoteCount: 0,
+                bookmarkCount: 0,
                 indexedAt: record.createdAt || new Date().toISOString(),
                 viewer: {},
                 labels: [],
             },
             replies: [],
+            threadContext: {},
         }
     });
   } catch (err) {
