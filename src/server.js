@@ -113,7 +113,10 @@ const auth = (req, res, next) => {
 app.get('/.well-known/atproto-did', async (req, res) => {
   const host = getHost(req);
   res.setHeader('Content-Type', 'text/plain');
-  res.send(formatDid(host) + '\n');
+  res.setHeader('Cache-Control', 'no-cache');
+  // Use res.write and res.end to ensure absolutely no extra formatting
+  res.write(formatDid(host));
+  res.end();
 });
 
 app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, res) => {
@@ -523,6 +526,7 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     
     res.json({
         did: user.did,
@@ -531,9 +535,19 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
         description: profile?.description || '',
         avatar: profile?.avatar,
         banner: profile?.banner,
+        associated: {
+            activitySubscription: { allowSubscriptions: 'followers' }
+        },
+        viewer: {
+            muted: false,
+            blockedBy: false,
+        },
+        labels: [],
+        createdAt: repoCreatedAt,
         indexedAt: new Date().toISOString(),
     });
   } catch (err) {
+    console.error('Error in getProfile:', err);
     res.status(500).json({ error: 'InternalServerError' });
   }
 });
@@ -548,6 +562,8 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
         const storage = new TursoStorage();
         const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
         const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+        const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
+
         const localProfile = {
             did: user.did,
             handle: user.handle,
@@ -555,6 +571,15 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
             description: profile?.description || '',
             avatar: profile?.avatar,
             banner: profile?.banner,
+            associated: {
+                activitySubscription: { allowSubscriptions: 'followers' }
+            },
+            viewer: {
+                muted: false,
+                blockedBy: false,
+            },
+            labels: [],
+            createdAt: repoCreatedAt,
             indexedAt: new Date().toISOString(),
         };
 
@@ -567,6 +592,7 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
 
     res.json({ profiles });
   } catch (err) {
+    console.error('Error in getProfiles:', err);
     res.status(500).json({ error: 'InternalServerError' });
   }
 });
