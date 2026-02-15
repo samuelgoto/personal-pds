@@ -75,10 +75,10 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(profileRes.data.description).toBe('Test Bio');
   });
 
-  test('atproto-did should return raw DID with trailing newline', async () => {
+  test('atproto-did should return raw DID without formatting', async () => {
     const res = await axios.get(`${HOST}/.well-known/atproto-did`);
     expect(res.status).toBe(200);
-    expect(res.data).toBe(userDid + '\n');
+    expect(res.data).toBe(userDid);
     expect(res.headers['content-type']).toContain('text/plain');
   });
 
@@ -213,11 +213,12 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     });
     const token = loginRes.data.accessJwt;
 
-    const blobData = Buffer.from('fake-image-data');
+    // Use a larger buffer to simulate a real image
+    const blobData = crypto.randomBytes(1024 * 10); 
     const uploadRes = await axios.post(`${HOST}/xrpc/com.atproto.repo.uploadBlob`, blobData, {
         headers: { 
             Authorization: `Bearer ${token}`,
-            'Content-Type': 'image/png'
+            'Content-Type': 'image/jpeg'
         }
     });
 
@@ -231,7 +232,7 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
 
     expect(getRes.status).toBe(200);
     expect(Buffer.from(getRes.data)).toEqual(blobData);
-    expect(getRes.headers['content-type']).toBe('image/png');
+    expect(getRes.headers['content-type']).toBe('image/jpeg');
   });
 
   test('should persist and retrieve birthDate via preferences', async () => {

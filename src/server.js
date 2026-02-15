@@ -739,7 +739,8 @@ app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', l
       }
     });
   } catch (err) {
-    res.status(500).json({ error: 'InternalServerError' });
+    console.error('Error in uploadBlob:', err);
+    res.status(500).json({ error: 'InternalServerError', message: err.message });
   }
 });
 
