@@ -657,6 +657,10 @@ app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
   return getAuthorFeed(req, res, userDid, req.query.limit);
 });
 
+app.get('/xrpc/app.bsky.feed.getFeed', auth, async (req, res) => {
+  res.json({ feed: [] });
+});
+
 app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
   try {
     const user = await getSingleUser(req);
