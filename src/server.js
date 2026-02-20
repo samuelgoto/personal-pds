@@ -862,6 +862,7 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
     const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
     const directReplies = [];
     for (const entry of allPostEntries) {
+        if (!entry.k) continue; // Safety check
         const postRkey = entry.k.split('/').pop();
         if (postRkey === rkey) continue; // Skip the anchor post itself
         
