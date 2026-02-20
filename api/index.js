@@ -81,7 +81,11 @@ initialize().then(() => {
 
   serverInst.listen(PORT, () => {
     console.log(`Minimal PDS listening on port ${PORT}`);
-    console.log(`Authoritative Domain: ${process.env.DOMAIN || 'not set'}`);
+    const domain = process.env.DOMAIN || 'pds.sgo.to';
+    console.log(`Authoritative Domain: ${domain}`);
+    
+    // Proactively ping relay on startup to trigger crawl
+    pingRelay(domain).catch(console.error);
   });
 }).catch(err => {
   console.error('CRITICAL STARTUP ERROR:', err);
