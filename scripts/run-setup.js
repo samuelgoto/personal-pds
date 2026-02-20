@@ -11,12 +11,10 @@ async function main() {
       interactive: false,
       skipPlc: true // We assume PLC is already handled manually
     });
-    console.log('
-✅ Setup process completed.');
+    console.log('\n✅ Setup process completed.');
     process.exit(0);
   } catch (err) {
-    console.error('
-❌ Setup failed:', err);
+    console.error('\n❌ Setup failed:', err);
     process.exit(1);
   }
 }
