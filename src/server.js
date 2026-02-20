@@ -284,18 +284,35 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const { handle } = req.query;
   const user = await getSingleUser(req);
-  if (!user) return res.status(404).json({ error: 'HandleNotFound' });
+  if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
 
   const domain = (process.env.DOMAIN || '').trim();
   const host = getHost(req);
 
-  // Broaden the check to include the domain and host
+  // 1. First check if it's our own handle
   if (!handle || handle === user.handle || handle === domain || handle === host || handle === 'self') {
-    console.log(`[RESOLVE] Resolved handle ${handle || 'default'} to ${user.did}`);
+    console.log(`[RESOLVE] Local handle resolved: ${handle || 'default'} -> ${user.did}`);
     return res.json({ did: user.did.trim() });
   }
 
-  console.log(`[RESOLVE] Failed to resolve handle: ${handle}`);
+  // 2. Otherwise, proxy the request to a public AppView to resolve other handles
+  try {
+    console.log(`[RESOLVE] Proxying handle resolution for: ${handle}`);
+    // Use a public AppView or the one identified in setup.js
+    const appView = 'https://bsky.social';
+    const response = await axios.get(`${appView}/xrpc/com.atproto.identity.resolveHandle?handle=${handle}`, {
+        timeout: 5000,
+        validateStatus: (status) => status === 200 || status === 404
+    });
+
+    if (response.status === 200) {
+        console.log(`[RESOLVE] External handle resolved: ${handle} -> ${response.data.did}`);
+        return res.json(response.data);
+    }
+  } catch (err) {
+    console.error(`[RESOLVE] Proxy resolution failed for ${handle}:`, err.message);
+  }
+
   return res.status(404).json({ error: 'HandleNotFound' });
 });
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
