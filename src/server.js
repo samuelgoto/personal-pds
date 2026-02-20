@@ -286,9 +286,7 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   }
 
   if (password !== user.password) {
-    const receivedSummary = `${password[0]}...${password[password.length-1]} (len: ${password.length})`;
-    const expectedSummary = `${user.password[0]}...${user.password[user.password.length-1]} (len: ${user.password.length})`;
-    console.log(`Login failed: Password mismatch for ${identifier}. Received: ${receivedSummary}, Expected: ${expectedSummary}`);
+    console.log(`Login failed: Password mismatch for ${identifier}`);
     return res.status(401).json({ error: 'InvalidPassword' });
   }
 
