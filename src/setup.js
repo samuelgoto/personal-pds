@@ -4,6 +4,7 @@ import * as crypto from '@atproto/crypto';
 import { cborEncode } from '@atproto/common';
 import axios from 'axios';
 import dns from 'dns/promises';
+import { Resolver } from 'dns/promises';
 import { base32 } from 'multiformats/bases/base32';
 import { db as defaultDb, initDb } from './db.js';
 import { TursoStorage, loadRepo, getRootCid } from './repo.js';
@@ -132,14 +133,15 @@ export async function runFullSetup(options = {}) {
 async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyHex) {
     console.log(`\n--- Identity Verification for ${pdsDid} ---`);
     let allOk = true;
+    let pdsEndpoint = null;
 
     // 1. PLC Directory Check
     try {
         console.log(`[1/5] Checking PLC Directory...`);
         const resolveRes = await axios.get(`https://plc.directory/${pdsDid}`);
-        const service = resolveRes.data.service?.[0]?.serviceEndpoint;
+        pdsEndpoint = resolveRes.data.service?.[0]?.serviceEndpoint;
         const aka = resolveRes.data.alsoKnownAs?.[0];
-        console.log(`  ✅ Resolved on PLC! Service: ${service}, Handle: ${aka}`);
+        console.log(`  ✅ Resolved on PLC! Service: ${pdsEndpoint}, Handle: ${aka}`);
     } catch (err) {
         console.error(`  ❌ Failed to resolve on PLC Directory.`);
         allOk = false;
@@ -163,7 +165,17 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
     // 3. Handle Resolution Check (DNS)
     try {
         console.log(`[3/5] Checking Handle Link (DNS TXT)...`);
-        const records = await dns.resolveTxt(`_atproto.${domain}`);
+        let records;
+        try {
+            records = await dns.resolveTxt(`_atproto.${domain}`);
+        } catch (e) {
+            // Fallback to Google DNS if local DNS fails
+            const resolver = new Resolver();
+            resolver.setServers(['8.8.8.8']);
+            records = await resolver.resolveTxt(`_atproto.${domain}`);
+            console.log(`     (Note: Verified via Google DNS fallback)`);
+        }
+
         const found = records.flat().find(r => r.startsWith('did='));
         if (found === `did=${pdsDid}`) {
             console.log(`  ✅ DNS Link verified!`);
@@ -172,7 +184,7 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
             allOk = false;
         }
     } catch (err) {
-        console.warn(`  ⚠️  DNS Link check failed: ${err.message}`);
+        console.warn(`  ⚠️  DNS Link check failed globally: ${err.message}`);
         allOk = false;
     }
 
@@ -186,33 +198,43 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
         // Relay might fail if it can't reach you yet, but we continue
     }
 
-    // 5. Bluesky AppView Visibility
+    // 5. Bluesky AppView Visibility & Indexing
     try {
-        console.log(`[5/5] Checking visibility on Bluesky AppView (oyster)...`);
+        console.log(`[5/5] Checking visibility & indexing on Bluesky AppView (oyster)...`);
         const appViewBase = 'https://oyster.us-east.host.bsky.network';
         
-        // Check handle resolution on specific AppView node
+        // Check handle resolution
         const resolveRes = await axios.get(`${appViewBase}/xrpc/com.atproto.identity.resolveHandle?handle=${domain}`);
         if (resolveRes.data.did === pdsDid) {
-            console.log(`  ✅ Handle successfully resolved to DID on AppView node!`);
+            console.log(`  ✅ Handle resolved correctly to DID on AppView!`);
             
-            // Now check profile on that same node
+            // Check profile indexing
             try {
-                const profileRes = await axios.get(`${appViewBase}/xrpc/app.bsky.actor.getProfile?actor=${pdsDid}`);
-                console.log(`  ✅ Profile is LIVE on AppView node! Display Name: ${profileRes.data.displayName || 'none'}`);
+                // 1. Check by DID
+                const profileByDid = await axios.get(`${appViewBase}/xrpc/app.bsky.actor.getProfile?actor=${pdsDid}`);
+                console.log(`  ✅ Profile indexed by DID! Display Name: ${profileByDid.data.displayName || 'none'}`);
+                
+                // 2. Check by Handle
+                const profileByHandle = await axios.get(`${appViewBase}/xrpc/app.bsky.actor.getProfile?actor=${domain}`);
+                console.log(`  ✅ Profile indexed by HANDLE!`);
             } catch (pErr) {
-                console.warn(`  ⚠️  DID resolves, but profile is not yet indexed on this AppView node. (Status: ${pErr.response?.status})`);
+                const status = pErr.response?.status;
+                if (status === 401 || status === 400 || status === 404) {
+                    console.warn(`  ⚠️  Identity known, but Repo NOT YET INDEXED (Status: ${status})`);
+                    console.log(`     Advice: The AppView knows who you are, but hasn't successfully pulled your data from ${pdsEndpoint || 'your PDS'}.`);
+                    console.log(`     This usually resolves after the Relay completes its crawl. Ensure your PDS is public and reachable.`);
+                } else {
+                    console.warn(`  ⚠️  Profile check failed: ${pErr.message}`);
+                }
+                allOk = false; // Indexing is required for "Perfect" status
             }
         } else {
-            console.warn(`  ⚠️  AppView node resolved handle ${domain} to DIFFERENT DID: ${resolveRes.data.did}`);
+            console.warn(`  ⚠️  AppView resolved handle ${domain} to DIFFERENT DID: ${resolveRes.data.did}`);
             allOk = false;
         }
     } catch (err) {
-        if (err.response?.status === 404 || err.response?.status === 400) {
-            console.warn(`  ⚠️  Not yet indexed on Bluesky AppView. (This is normal for new accounts)`);
-        } else {
-            console.warn(`  ⚠️  AppView check failed: ${err.message}`);
-        }
+        console.warn(`  ⚠️  AppView check failed: ${err.message}`);
+        allOk = false;
     }
 
     if (!allOk) {

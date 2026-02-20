@@ -276,18 +276,10 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     // The record CID and commit CID must be different
     expect(recordCid).not.toBe(commitCid);
 
-    // 2. Fetch the event from sequencer
-    const syncRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.subscribeRepos`);
+    // 2. Fetch the event from sequencer (commented out as it returns 426 on HTTP)
+    // const syncRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.subscribeRepos`);
     
-    // subscribeRepos returns a binary stream of frames.
-    // Each frame is [header_cbor][body_cbor].
-    // Our formatEvent implementation: Buffer.concat([header, body])
-    const data = Buffer.from(syncRes.data);
-    
-    // This is a bit of a hacky parse but works for our test
-    // Search for the commit cid in the binary blob to find the right event
-    // or just look at the last 100 events.
-    
+    // Check the event directly in the database instead
     const eventsRes = await testDb.execute("SELECT event FROM sequencer ORDER BY seq DESC LIMIT 1");
     const lastEvent = cborDecode(new Uint8Array(eventsRes.rows[0].event));
     
