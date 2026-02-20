@@ -60,6 +60,7 @@ const getSystemMeta = async (key) => {
 
 // Helper to get the current host safely
 export const getHost = (req) => {
+  if (process.env.DOMAIN) return process.env.DOMAIN;
   return (req.headers['x-forwarded-host'] || req.get('host') || 'localhost').split(':')[0];
 };
 
