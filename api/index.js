@@ -2,8 +2,11 @@ import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
 import { initDb, db } from '../src/db.js';
-import app, { getHost } from '../src/server.js';
+import * as server from '../src/server.js';
 import { maybeInitRepo } from '../src/repo.js';
+
+const app = server.default;
+const getHost = server.getHost;
 
 const PORT = process.env.PORT || 3000;
 const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
@@ -66,9 +69,9 @@ app.use(async (req, res, next) => {
 // For local development
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   initialize().then(() => {
-    const server = http.createServer(app);
+    const serverInst = http.createServer(app);
 
-    server.listen(PORT, () => {
+    serverInst.listen(PORT, () => {
       console.log(`Minimal PDS listening on port ${PORT}`);
     });
   }).catch(console.error);
