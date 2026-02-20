@@ -13,57 +13,15 @@ import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid } from '.
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
 
-// Simple in-memory set to track firehose subscribers
-const firehoseSubscribers = new Set();
-
-wss.on('connection', (ws) => {
-  console.log('New firehose subscriber connected');
-  firehoseSubscribers.add(ws);
-  ws.on('close', () => firehoseSubscribers.delete(ws));
+// Unify WebSocket handling via Sequencer
+wss.on('connection', (ws, req) => {
+  console.log('New firehose subscriber connected (via sequencer)');
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const cursor = url.searchParams.get('cursor');
+  sequencer.addClient(ws, cursor ? parseInt(cursor, 10) : undefined);
 });
 
-export const broadcastRepoUpdate = async (did, rootCid, event) => {
-    console.log(`[FIREHOSE] Broadcasting repo update: did=${did}, rootCid=${rootCid}. Active subscribers: ${firehoseSubscribers.size}`);
-    try {
-        const storage = new TursoStorage();
-        const blocks = await storage.getRepoBlocks();
-        const car = await blocksToCarFile(CID.parse(rootCid), blocks);
-        
-        // Ensure all CIDs in ops are proper CID objects for CBOR encoding
-        const formattedOps = (event.ops || []).map(op => ({
-            ...op,
-            cid: op.cid ? (typeof op.cid === 'string' ? CID.parse(op.cid) : op.cid) : null
-        }));
-
-        // ATProto Firehose Commit Event Body
-        const message = {
-            repo: did,
-            commit: CID.parse(rootCid),
-            blocks: new Uint8Array(car),
-            rev: event.rev,
-            since: event.since || null,
-            ops: formattedOps,
-            blobs: [],
-            time: event.time || new Date().toISOString(),
-            rebase: false,
-            tooBig: false,
-        };
-
-        const header = { t: '#commit', op: 1 };
-        const encodedHeader = cborEncode(header);
-        const encodedMessage = cborEncode(message);
-        const frame = Buffer.concat([Buffer.from(encodedHeader), Buffer.from(encodedMessage)]);
-
-        firehoseSubscribers.forEach(ws => {
-            if (ws.readyState === 1) { // OPEN
-                ws.send(frame);
-            }
-        });
-        console.log(`[FIREHOSE] Frame sent to ${firehoseSubscribers.size} subscribers`);
-    } catch (err) {
-        console.error('[FIREHOSE] Broadcast failed:', err);
-    }
-};
+// Remove broadcastRepoUpdate as it's handled by sequencer.sequenceEvent
 
 // 1. CORS middleware (Absolute top)
 app.use((req, res, next) => {
@@ -571,16 +529,10 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
         since: repoObj.commit.rev,
         ops: ops,
         time: new Date().toISOString(),
+        rebase: false,
+        tooBig: false,
+        blobs: [],
       }
-    });
-
-    // Broadcast to WebSocket firehose
-    // We await this to ensure the Relay receives it before the request finishes
-    console.log(`[FIREHOSE] Triggering broadcast for ${user.did}...`);
-    await broadcastRepoUpdate(user.did, updatedRepo.cid.toString(), {
-        rev: updatedRepo.commit.rev,
-        since: repoObj.commit.rev,
-        ops: ops,
     });
 
     res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });

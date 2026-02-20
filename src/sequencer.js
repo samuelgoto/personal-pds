@@ -26,18 +26,22 @@ class Sequencer {
 
   async sequenceEvent(evt) {
     const time = new Date().toISOString();
-    const encoded = cborEncode(evt.event);
     
     const res = await db.execute({
       sql: 'INSERT INTO sequencer (did, type, event, time) VALUES (?, ?, ?, ?) RETURNING seq',
-      args: [evt.did, evt.type, Buffer.from(encoded), time]
+      args: [evt.did, evt.type, Buffer.from(cborEncode(evt.event)), time]
     });
     
     const seq = res.rows[0].seq;
+    
+    // Add seq to the event body for the firehose broadcast
+    const eventWithSeq = { ...evt.event, seq };
+    const encodedWithSeq = cborEncode(eventWithSeq);
+
     const fullEvent = this.formatEvent({
         seq,
         type: evt.type,
-        event: encoded,
+        event: encodedWithSeq,
         time
     });
 
@@ -46,6 +50,7 @@ class Sequencer {
         client.send(fullEvent);
       }
     }
+    return seq;
   }
 
   close() {
