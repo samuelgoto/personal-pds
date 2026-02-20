@@ -936,8 +936,8 @@ app.get('/xrpc/app.bsky.draft.getDrafts', auth, async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
-  const host = getHost(req);
-  res.json({ availableUserDomains: [host], did: formatDid(host) });
+  const pdsDid = (process.env.PDS_DID || '').trim();
+  res.json({ availableUserDomains: [getHost(req)], did: pdsDid });
 });
 
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
@@ -1003,6 +1003,7 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
   }
 });
 
+app.head('/xrpc/com.atproto.sync.getHead', (req, res) => res.status(200).end());
 app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   try {
     const { did } = req.query;
@@ -1018,6 +1019,7 @@ app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   }
 });
 
+app.head('/xrpc/com.atproto.sync.getLatestCommit', (req, res) => res.status(200).end());
 app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   try {
     const { did } = req.query;
@@ -1061,6 +1063,7 @@ app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
   res.status(404).json({ error: 'MethodNotImplemented', message: 'Firehose not supported, use TAP sync' });
 });
 
+app.head('/xrpc/com.atproto.sync.getRepo', (req, res) => res.status(200).end());
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did, since } = req.query;
   const pdsDid = (process.env.PDS_DID || '').trim();
