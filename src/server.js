@@ -815,25 +815,28 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
   }
 });
 
-const getPostThread = async (req, res, uri) => {
+const getPostThread = async (req, res, uri, isV2 = false) => {
   try {
     const user = await getSingleUser(req);
     if (!user) return res.status(404).json({ error: 'PostNotFound' });
 
-    // Support both at://did:web:pds.sgo.to and at://pds.sgo.to
-    const isLocalDid = uri.startsWith(`at://${user.did}`);
-    const isLocalHandle = uri.startsWith(`at://${user.handle}`);
+    // Canonicalize the URI to use the DID instead of the handle
+    const canonicalUri = uri.replace(`at://${user.handle}`, `at://${user.did}`);
+    const isLocalDid = canonicalUri.startsWith(`at://${user.did}`);
 
-    if (!isLocalDid && !isLocalHandle) {
+    if (!isLocalDid) {
         return res.status(404).json({ error: 'PostNotFound' });
     }
 
-    const parts = uri.replace('at://', '').split('/');
+    const parts = canonicalUri.replace('at://', '').split('/');
     const collection = parts[1];
     const rkey = parts[2];
 
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    
+    // Get actual CID of the record
+    const recordCid = await repoObj.data.get(`${collection}/${rkey}`);
     const record = await repoObj.getRecord(collection, rkey);
 
     if (!record) {
@@ -851,21 +854,51 @@ const getPostThread = async (req, res, uri) => {
         associated: {
             activitySubscription: { allowSubscriptions: 'followers' }
         },
-        viewer: {
-            muted: false,
-            blockedBy: false,
-        },
         labels: [],
         createdAt: repoCreatedAt,
         indexedAt: new Date().toISOString(),
     };
 
+    if (isV2) {
+        // Build the thread as an array, matching the latest getPostThreadV2 spec
+        return res.json({
+          thread: [
+            {
+              uri: canonicalUri,
+              depth: 0,
+              value: {
+                $type: "app.bsky.unspecced.defs#threadItemPost",
+                post: {
+                  uri: canonicalUri,
+                  cid: recordCid.toString(),
+                  author,
+                  record,
+                  replyCount: 0,
+                  repostCount: 0,
+                  likeCount: 0,
+                  quoteCount: 0,
+                  bookmarkCount: 0,
+                  indexedAt: record.createdAt || new Date().toISOString(),
+                  labels: []
+                },
+                moreParents: false,
+                moreReplies: 0,
+                opThread: true,
+                hiddenByThreadgate: false,
+                mutedByViewer: false
+              }
+            }
+          ],
+          hasOtherReplies: false
+        });
+    }
+
     res.json({
         thread: {
             $type: 'app.bsky.feed.defs#threadViewPost',
             post: {
-                uri,
-                cid: user.root_cid, // Approximate
+                uri: canonicalUri,
+                cid: recordCid.toString(),
                 author,
                 record,
                 replyCount: 0,
@@ -888,11 +921,11 @@ const getPostThread = async (req, res, uri) => {
 };
 
 app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res) => {
-  return getPostThread(req, res, req.query.uri);
+  return getPostThread(req, res, req.query.uri, false);
 });
 
 app.get('/xrpc/app.bsky.unspecced.getPostThreadV2', async (req, res) => {
-  return getPostThread(req, res, req.query.anchor);
+  return getPostThread(req, res, req.query.anchor, true);
 });
 
 app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
