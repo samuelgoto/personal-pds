@@ -115,6 +115,9 @@ export async function maybeInitRepo() {
   const did = (process.env.PDS_DID || formatDid(domain)).trim();
   
   if (!privKeyHex) {
+    console.log('PRIVATE_KEY not found. Skipping repo auto-init.');
+    return;
+  }
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
 
   console.log(`Auto-initializing PDS repo for ${did}...`);
