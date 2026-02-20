@@ -73,8 +73,10 @@ class Sequencer {
 
   formatEvent(row) {
     const header = { op: 1, t: `#${row.type}` };
+    const encodedHeader = cborEncode(header);
+    console.log(`[SEQUENCER] Formatting event: type=${row.type}, header_len=${encodedHeader.length}, body_len=${row.event.length}`);
     return Buffer.concat([
-        Buffer.from(cborEncode(header)),
+        Buffer.from(encodedHeader),
         Buffer.from(row.event)
     ]);
   }
