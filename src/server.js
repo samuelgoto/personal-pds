@@ -82,8 +82,15 @@ app.use(express.json());
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const pdsDid = (process.env.PDS_DID || '').trim();
-  console.log(`describeServer request. Returning did=${pdsDid}`);
+  console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
   res.json({ availableUserDomains: [getHost(req)], did: pdsDid });
+});
+
+app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
+  res.json({
+    did: (process.env.PDS_DID || '').trim(),
+    endpoint: `https://${getHost(req)}`
+  });
 });
 
 // 4. Favicon handler
@@ -1047,6 +1054,30 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
             'app.bsky.graph.follow'
         ],
         handleIsCorrect: true,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/com.atproto.sync.getRecord', async (req, res) => {
+  try {
+    const { did, collection, rkey } = req.query;
+    const pdsDid = (process.env.PDS_DID || '').trim();
+    if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+
+    const storage = new TursoStorage();
+    const rootCid = await getRootCid();
+    const repoObj = await Repo.load(storage, CID.parse(rootCid));
+    const record = await repoObj.getRecord(collection, rkey);
+
+    if (!record) return res.status(404).json({ error: 'RecordNotFound' });
+
+    // Note: getRecord in sync usually returns proof (blocks), but we'll provide the data
+    res.json({
+        uri: `at://${did}/${collection}/${rkey}`,
+        cid: (await repoObj.data.get(`${collection}/${rkey}`)).toString(),
+        value: record
     });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
