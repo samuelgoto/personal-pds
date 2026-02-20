@@ -1009,7 +1009,6 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   try {
     const { did } = req.query;
-    console.log(`getHead request for ${did}. Headers: ${JSON.stringify(req.headers)}`);
     const user = await getSingleUser(req);
     if (!user || did !== user.did) {
         return res.status(404).json({ error: 'RepoNotFound' });
@@ -1026,7 +1025,6 @@ app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   try {
     const { did } = req.query;
-    console.log(`getLatestCommit request for ${did}. Headers: ${JSON.stringify(req.headers)}`);
     const user = await getSingleUser(req);
     if (!user || did !== user.did) {
         return res.status(404).json({ error: 'RepoNotFound' });
