@@ -8,7 +8,7 @@ import { createHash } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
-import { cborEncode, cborDecode } from './util.js';
+import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid } from './util.js';
 
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
