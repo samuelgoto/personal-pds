@@ -90,11 +90,10 @@ export const getHost = (req) => {
 
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
-  const host = getHost(req);
-  const domain = host;
+  const domain = (process.env.DOMAIN || 'localhost').split(':')[0];
   const handle = domain === 'localhost' ? 'localhost.test' : domain;
   
-  const did = formatDid(domain);
+  const did = (process.env.PDS_DID || formatDid(domain)).trim();
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
   
@@ -287,11 +286,16 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   const user = await getSingleUser(req);
   if (!user) return res.status(404).json({ error: 'HandleNotFound' });
 
-  // If no handle provided, or it matches our domain, return our DID
-  if (!handle || handle === user.handle || handle === 'self') {
+  const domain = (process.env.DOMAIN || '').trim();
+  const host = getHost(req);
+
+  // Broaden the check to include the domain and host
+  if (!handle || handle === user.handle || handle === domain || handle === host || handle === 'self') {
+    console.log(`[RESOLVE] Resolved handle ${handle || 'default'} to ${user.did}`);
     return res.json({ did: user.did.trim() });
   }
 
+  console.log(`[RESOLVE] Failed to resolve handle: ${handle}`);
   return res.status(404).json({ error: 'HandleNotFound' });
 });
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
