@@ -984,6 +984,7 @@ app.get('/xrpc/app.bsky.draft.getDrafts', auth, async (req, res) => {
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const pdsDid = (process.env.PDS_DID || '').trim();
+  console.log(`describeServer request. Returning did=${pdsDid}`);
   res.json({ availableUserDomains: [getHost(req)], did: pdsDid });
 });
 
