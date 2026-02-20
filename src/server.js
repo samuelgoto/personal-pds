@@ -80,6 +80,12 @@ app.use((req, res, next) => {
 // 3. JSON parser
 app.use(express.json());
 
+app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
+  const pdsDid = (process.env.PDS_DID || '').trim();
+  console.log(`describeServer request. Returning did=${pdsDid}`);
+  res.json({ availableUserDomains: [getHost(req)], did: pdsDid });
+});
+
 // 4. Favicon handler
 app.get('/favicon.ico', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
@@ -982,12 +988,6 @@ app.post('/xrpc/app.bsky.notification.updateSeen', auth, async (req, res) => {
 
 app.get('/xrpc/app.bsky.draft.getDrafts', auth, async (req, res) => {
   res.json({ drafts: [] });
-});
-
-app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
-  const pdsDid = (process.env.PDS_DID || '').trim();
-  console.log(`describeServer request. Returning did=${pdsDid}`);
-  res.json({ availableUserDomains: [getHost(req)], did: pdsDid });
 });
 
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {

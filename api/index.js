@@ -84,8 +84,23 @@ initialize().then(() => {
     const domain = process.env.DOMAIN || 'pds.sgo.to';
     console.log(`Authoritative Domain: ${domain}`);
     
-    // Proactively ping relay on startup to trigger crawl
-    pingRelay(domain).catch(console.error);
+// Proactively ping relay on startup to trigger crawl
+    setTimeout(async () => {
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+            try {
+                console.log(`Attempt ${attempts + 1}: Pinging relay for ${domain}...`);
+                const result = await pingRelay(domain);
+                if (result.success) break;
+                console.log(`Ping failed, retrying in 10s...`);
+            } catch (e) {
+                console.log(`Ping error, retrying in 10s...`);
+            }
+            attempts++;
+            await new Promise(r => setTimeout(r, 10000));
+        }
+    }, 5000); // 5s initial delay for Heroku routing to stabilize
   });
 }).catch(err => {
   console.error('CRITICAL STARTUP ERROR:', err);
