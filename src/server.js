@@ -48,6 +48,15 @@ wss.on('connection', (ws, req) => {
   sequencer.addClient(ws, cursor ? parseInt(cursor, 10) : undefined);
 });
 
+app.get('/debug-env', (req, res) => {
+  res.json({
+    DOMAIN: process.env.DOMAIN?.length,
+    PDS_DID: process.env.PDS_DID?.length,
+    PASSWORD: process.env.PASSWORD?.length,
+    PRIVATE_KEY: process.env.PRIVATE_KEY?.length
+  });
+});
+
 // Helper to get system state
 const getSystemMeta = async (key) => {
   try {
