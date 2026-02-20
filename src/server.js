@@ -560,12 +560,6 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
     const carBlocks = await storage.getRepoBlocks();
     const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
 
-    // CRITICAL: Update the user's root CID in the database
-    await db.execute({
-      sql: 'UPDATE users SET root_cid = ? WHERE did = ?',
-      args: [updatedRepo.cid.toString(), user.did]
-    });
-
     await sequencer.sequenceEvent({
       did: user.did,
       type: 'commit',
