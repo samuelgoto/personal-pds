@@ -5,7 +5,7 @@ import { TID } from '@atproto/common';
 
 export function formatDid(hostname) {
   if (process.env.PDS_DID) {
-    return process.env.PDS_DID;
+    return process.env.PDS_DID.trim();
   }
   throw new Error('PDS_DID environment variable is required for did:plc identity.');
 }
