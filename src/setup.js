@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import { cborEncode } from '@atproto/common';
 import axios from 'axios';
+import dns from 'dns/promises';
 import { base32 } from 'multiformats/bases/base32';
 import { db as defaultDb, initDb } from './db.js';
 import { TursoStorage, loadRepo, getRootCid } from './repo.js';
@@ -53,13 +54,17 @@ export async function runFullSetup(options = {}) {
 
   if (!pdsDid || !pdsDid.startsWith('did:plc:')) {
     if (skipPlc) {
-        // In tests or when skipped, we use a deterministic but unique placeholder for did:plc
         const hash = createHash('sha256').update(domain).digest('hex').slice(0, 24);
         pdsDid = `did:plc:${hash}`;
         console.log(`Using placeholder identity: ${pdsDid}`);
     } else if (interactive && rl) {
         console.log(`No valid PDS_DID found. Starting did:plc registration for ${domain}...`);
         pdsDid = await registerPlc(domain, privKeyHex, rl);
+        if (!pdsDid) {
+            console.log('Registration failed, using deterministic fallback for PDS_DID.');
+            const hash = createHash('sha256').update(domain + privKeyHex).digest('hex').slice(0, 24);
+            pdsDid = `did:plc:${hash}`;
+        }
     }
 
     if (pdsDid) {
@@ -71,22 +76,9 @@ export async function runFullSetup(options = {}) {
     }
   }
 
-  // Verification step: check if DID resolves
+  // Verification Suite
   if (!skipPlc && pdsDid.startsWith('did:plc:')) {
-      console.log(`Verifying resolution for ${pdsDid}...`);
-      try {
-          const resolveRes = await axios.get(`https://plc.directory/${pdsDid}`);
-          console.log(`Successfully resolved DID! PDS endpoint: ${resolveRes.data.service?.[0]?.serviceEndpoint}`);
-      } catch (err) {
-          console.warn(`Warning: Could not resolve DID ${pdsDid} on plc.directory. It might still be propagating.`);
-          if (interactive && rl) {
-              const retry = await new Promise(r => rl.question('Resolution failed. Attempt registration again? (y/N): ', r));
-              if (retry.toLowerCase() === 'y') {
-                  const newDid = await registerPlc(domain, privKeyHex, rl);
-                  if (newDid) return runFullSetup({ ...options, domain });
-              }
-          }
-      }
+      await verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyHex);
   }
 
   const did = pdsDid;
@@ -137,6 +129,109 @@ export async function runFullSetup(options = {}) {
   return results;
 }
 
+async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyHex) {
+    console.log(`\n--- Identity Verification for ${pdsDid} ---`);
+    let allOk = true;
+
+    // 1. PLC Directory Check
+    try {
+        console.log(`[1/5] Checking PLC Directory...`);
+        const resolveRes = await axios.get(`https://plc.directory/${pdsDid}`);
+        const service = resolveRes.data.service?.[0]?.serviceEndpoint;
+        const aka = resolveRes.data.alsoKnownAs?.[0];
+        console.log(`  ✅ Resolved on PLC! Service: ${service}, Handle: ${aka}`);
+    } catch (err) {
+        console.error(`  ❌ Failed to resolve on PLC Directory.`);
+        allOk = false;
+    }
+
+    // 2. Handle Resolution Check (HTTP)
+    try {
+        console.log(`[2/5] Checking Handle Link (HTTP .well-known)...`);
+        const wellKnownRes = await axios.get(`https://${domain}/.well-known/atproto-did`);
+        if (wellKnownRes.data.trim() === pdsDid) {
+            console.log(`  ✅ HTTP Link verified!`);
+        } else {
+            console.warn(`  ⚠️  HTTP Link mismatch: expected ${pdsDid}, got ${wellKnownRes.data.trim()}`);
+            allOk = false;
+        }
+    } catch (err) {
+        console.warn(`  ⚠️  HTTP Link check failed: ${err.message}`);
+        allOk = false;
+    }
+
+    // 3. Handle Resolution Check (DNS)
+    try {
+        console.log(`[3/5] Checking Handle Link (DNS TXT)...`);
+        const records = await dns.resolveTxt(`_atproto.${domain}`);
+        const found = records.flat().find(r => r.startsWith('did='));
+        if (found === `did=${pdsDid}`) {
+            console.log(`  ✅ DNS Link verified!`);
+        } else {
+            console.warn(`  ⚠️  DNS Link mismatch or missing: ${found || 'none'}`);
+            allOk = false;
+        }
+    } catch (err) {
+        console.warn(`  ⚠️  DNS Link check failed: ${err.message}`);
+        allOk = false;
+    }
+
+    // 4. Relay Crawl Request
+    try {
+        console.log(`[4/5] Pinging Bluesky Relay (Requesting Crawl)...`);
+        await axios.post('https://bsky.network/xrpc/com.atproto.sync.requestCrawl', { hostname: domain });
+        console.log(`  ✅ Relay pinged successfully!`);
+    } catch (err) {
+        console.warn(`  ⚠️  Relay ping failed: ${err.response?.data?.message || err.message}`);
+        // Relay might fail if it can't reach you yet, but we continue
+    }
+
+    // 5. Bluesky AppView Visibility
+    try {
+        console.log(`[5/5] Checking visibility on Bluesky AppView (oyster)...`);
+        const appViewBase = 'https://oyster.us-east.host.bsky.network';
+        
+        // Check handle resolution on specific AppView node
+        const resolveRes = await axios.get(`${appViewBase}/xrpc/com.atproto.identity.resolveHandle?handle=${domain}`);
+        if (resolveRes.data.did === pdsDid) {
+            console.log(`  ✅ Handle successfully resolved to DID on AppView node!`);
+            
+            // Now check profile on that same node
+            try {
+                const profileRes = await axios.get(`${appViewBase}/xrpc/app.bsky.actor.getProfile?actor=${pdsDid}`);
+                console.log(`  ✅ Profile is LIVE on AppView node! Display Name: ${profileRes.data.displayName || 'none'}`);
+            } catch (pErr) {
+                console.warn(`  ⚠️  DID resolves, but profile is not yet indexed on this AppView node. (Status: ${pErr.response?.status})`);
+            }
+        } else {
+            console.warn(`  ⚠️  AppView node resolved handle ${domain} to DIFFERENT DID: ${resolveRes.data.did}`);
+            allOk = false;
+        }
+    } catch (err) {
+        if (err.response?.status === 404 || err.response?.status === 400) {
+            console.warn(`  ⚠️  Not yet indexed on Bluesky AppView. (This is normal for new accounts)`);
+        } else {
+            console.warn(`  ⚠️  AppView check failed: ${err.message}`);
+        }
+    }
+
+    if (!allOk) {
+        console.log(`\n--- 🛠️  Troubleshooting Advice ---`);
+        console.log(`1. Ensure Vercel environment variables are correct (PDS_DID, PRIVATE_KEY).`);
+        console.log(`2. DNS: Add a TXT record at _atproto.${domain} with value: did=${pdsDid}`);
+        console.log(`3. Wait: Network propagation can take 5-10 minutes.`);
+        
+        if (interactive && rl && !rl.closed) {
+            const retry = await new Promise(r => rl.question('\nIdentity is not fully setup. Try verifying again? (y/N): ', r));
+            if (retry.toLowerCase() === 'y') {
+                return runFullSetup({ ...options, domain, rl });
+            }
+        }
+    } else {
+        console.log(`\n✨ Identity looks perfect! You are live on the AT Protocol.`);
+    }
+}
+
 function updateEnvFile(key, value) {
   if (process.env.NODE_ENV === 'test' || !fs.existsSync('.env')) return;
   let content = fs.readFileSync('.env', 'utf8');
@@ -154,7 +249,6 @@ async function registerPlc(domain, signingKeyHex, rl) {
     const rotationKeypair = await crypto.Secp256k1Keypair.create({ exportable: true });
     const rotationKeyHex = Buffer.from(await rotationKeypair.export()).toString('hex');
     
-    // A 'create' operation for did:plc
     const op = {
       type: 'plc_operation',
       rotationKeys: [rotationKeypair.did()],
@@ -171,18 +265,14 @@ async function registerPlc(domain, signingKeyHex, rl) {
       prev: null,
     };
 
-    // The signature must be base64url encoded
     const signature = await rotationKeypair.sign(cborEncode(op));
     const signedOp = {
       ...op,
       sig: Buffer.from(signature).toString('base64url'),
     };
 
-    // Correct DID calculation: 
-    // did:plc: + base32(sha256(signed genesis op)).slice(0, 24)
     const hash = createHash('sha256').update(cborEncode(signedOp)).digest();
-    // base32.encode returns a string with 'b' prefix usually, we need to handle that
-    const encoded = base32.encode(hash).slice(1); // strip prefix
+    const encoded = base32.encode(hash).slice(1);
     const plcDid = `did:plc:${encoded.slice(0, 24)}`;
 
     console.log(`\nCalculated DID: ${plcDid}`);
