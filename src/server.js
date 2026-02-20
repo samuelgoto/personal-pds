@@ -1055,6 +1055,7 @@ app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did } = req.query;
   const host = getHost(req);
+  console.log(`DEBUG getRepo: did=${did} host=${host} formatDid=${formatDid(host)}`);
   if (did !== formatDid(host)) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();
