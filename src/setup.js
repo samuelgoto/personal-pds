@@ -188,14 +188,26 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
         allOk = false;
     }
 
-    // 4. Relay Crawl Request
+    // 4. Relay Crawl & Health
     try {
-        console.log(`[4/5] Pinging Bluesky Relay (Requesting Crawl)...`);
+        console.log(`[4/5] Checking Relay Status (bsky.network)...`);
+        
+        // Check if relay has indexed the head
+        let relayHead = null;
+        try {
+            const headRes = await axios.get(`https://bsky.network/xrpc/com.atproto.sync.getHead?did=${pdsDid}`);
+            relayHead = headRes.data.root;
+            const match = relayHead === results.rootCid ? "✅ MATCH" : "⚠️ MISMATCH";
+            console.log(`  ✅ Relay has indexed your head: ${relayHead} (${match})`);
+        } catch (e) {
+            console.log(`  ⚠️  Relay has NOT yet indexed your repo head.`);
+        }
+
+        console.log(`      Pinging Relay for fresh crawl...`);
         await axios.post('https://bsky.network/xrpc/com.atproto.sync.requestCrawl', { hostname: domain });
-        console.log(`  ✅ Relay pinged successfully!`);
+        console.log(`  ✅ Relay crawl request accepted!`);
     } catch (err) {
-        console.warn(`  ⚠️  Relay ping failed: ${err.response?.data?.message || err.message}`);
-        // Relay might fail if it can't reach you yet, but we continue
+        console.warn(`  ⚠️  Relay interaction failed: ${err.response?.data?.message || err.message}`);
     }
 
     // 5. Bluesky AppView Visibility & Indexing
