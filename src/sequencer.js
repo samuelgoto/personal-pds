@@ -5,12 +5,24 @@ import { WebSocket } from 'ws';
 class Sequencer {
   clients = new Set();
 
-  addClient(ws, cursor) {
+  async addClient(ws, cursor) {
     this.clients.add(ws);
     ws.on('close', () => this.clients.delete(ws));
     
     if (cursor !== undefined) {
-      this.backfill(ws, cursor);
+      await this.backfill(ws, cursor);
+    } else {
+      // If no cursor, send the latest event so they have a starting point
+      try {
+        const res = await db.execute({
+          sql: 'SELECT * FROM sequencer ORDER BY seq DESC LIMIT 1'
+        });
+        if (res.rows.length > 0) {
+          ws.send(this.formatEvent(res.rows[0]));
+        }
+      } catch (err) {
+        console.error('[SEQUENCER] Failed to send latest event to new client:', err);
+      }
     }
   }
 

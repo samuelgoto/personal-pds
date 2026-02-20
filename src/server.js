@@ -51,9 +51,10 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
-  const pdsDid = (process.env.PDS_DID || '').trim();
+  const host = getHost(req);
+  const pdsDid = `did:web:${host}`;
   console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
-  res.json({ availableUserDomains: [getHost(req)], did: pdsDid });
+  res.json({ availableUserDomains: [host], did: pdsDid });
 });
 
 app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
