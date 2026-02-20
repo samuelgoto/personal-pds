@@ -1013,6 +1013,7 @@ app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
     const rootCid = await getRootCid();
     if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
 
+    res.setHeader('Content-Type', 'application/json');
     res.json({ root: rootCid });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
@@ -1034,6 +1035,7 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
     if (result.rows.length === 0 || !rootCid) return res.status(404).json({ error: 'RepoNotFound' });
     const event = cborDecode(new Uint8Array(result.rows[0].event));
 
+    res.setHeader('Content-Type', 'application/json');
     res.json({
         cid: rootCid,
         rev: event.rev,
