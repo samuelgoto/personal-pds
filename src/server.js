@@ -1106,11 +1106,15 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
 
 // Helper to get a single record from the local repo
 const getRecordHelper = async (repo, collection, rkey) => {
-  const user = await getSingleUser(); // No req needed now as it uses process.env
-  if (!user) return null;
+  const user = await getSingleUser(); 
+  if (!user) {
+    console.log('[HELPER] No user found');
+    return null;
+  }
   
-  // Check if repo matches our DID or handle (case-insensitive)
-  if (repo.toLowerCase() !== user.did.toLowerCase() && repo.toLowerCase() !== user.handle.toLowerCase()) {
+  const isMatch = repo.toLowerCase() === user.did.toLowerCase() || repo.toLowerCase() === user.handle.toLowerCase();
+  if (!isMatch) {
+    console.log(`[HELPER] Repo mismatch: ${repo} !== ${user.did} or ${user.handle}`);
     return null;
   }
 
@@ -1118,15 +1122,51 @@ const getRecordHelper = async (repo, collection, rkey) => {
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     const value = await repoObj.getRecord(collection, rkey);
-    if (!value) return null;
+    
+    if (!value) {
+        console.log(`[HELPER] Record not found: ${collection}/${rkey}`);
+        return null;
+    }
     
     const cid = await repoObj.data.get(`${collection}/${rkey}`);
     return { value, cid: cid.toString() };
   } catch (err) {
-    console.error(`Error in getRecordHelper for ${collection}/${rkey}:`, err.message);
+    console.error(`[HELPER] Error fetching ${collection}/${rkey}:`, err.message);
     return null;
   }
 };
+
+app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
+  try {
+    const { repo, collection, limit, cursor } = req.query;
+    const user = await getSingleUser();
+    if (!user || (repo.toLowerCase() !== user.did.toLowerCase() && repo.toLowerCase() !== user.handle.toLowerCase())) {
+        return res.status(404).json({ error: 'RepoNotFound' });
+    }
+
+    const storage = new TursoStorage();
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const entries = await repoObj.data.list(collection + '/');
+    
+    const records = [];
+    for (const entry of entries) {
+        const rkey = entry.k.split('/').pop();
+        const value = await repoObj.getRecord(collection, rkey);
+        if (value) {
+            records.push({
+                uri: `at://${user.did}/${collection}/${rkey}`,
+                cid: entry.v.toString(),
+                value
+            });
+        }
+    }
+
+    res.json({ records });
+  } catch (err) {
+    console.error('Error in listRecords:', err);
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
 
 app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
   try {
