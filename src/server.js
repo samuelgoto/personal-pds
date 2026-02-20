@@ -27,22 +27,24 @@ export const broadcastRepoUpdate = async (did, rootCid, event) => {
     const blocks = await storage.getRepoBlocks();
     const car = await blocksToCarFile(CID.parse(rootCid), blocks);
     
+    // ATProto Firehose Commit Event Body
     const message = {
-        t: '#commit',
-        op: 1,
         repo: did,
-        commit: rootCid,
-        blocks: Buffer.from(car),
+        commit: CID.parse(rootCid),
+        blocks: new Uint8Array(car),
         rev: event.rev,
         since: event.since || null,
         ops: event.ops || [],
+        blobs: [],
         time: event.time || new Date().toISOString(),
+        rebase: false,
+        tooBig: false,
     };
 
     const header = { t: '#commit', op: 1 };
     const encodedHeader = cborEncode(header);
     const encodedMessage = cborEncode(message);
-    const frame = Buffer.concat([encodedHeader, encodedMessage]);
+    const frame = Buffer.concat([Buffer.from(encodedHeader), Buffer.from(encodedMessage)]);
 
     firehoseSubscribers.forEach(ws => {
         if (ws.readyState === 1) { // OPEN
