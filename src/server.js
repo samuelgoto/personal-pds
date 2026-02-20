@@ -1065,7 +1065,13 @@ app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did } = req.query;
   const host = getHost(req);
-  if (did !== formatDid(host)) return res.status(404).json({ error: 'RepoNotFound' });
+  const userAgent = req.headers['user-agent'] || 'unknown';
+  console.log(`getRepo request for ${did} from ${userAgent}`);
+  
+  if (did !== formatDid(host)) {
+    console.log(`getRepo 404: DID mismatch. Received: ${did}, Expected: ${formatDid(host)}`);
+    return res.status(404).json({ error: 'RepoNotFound' });
+  }
   
   const rootCid = await getRootCid();
   if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
