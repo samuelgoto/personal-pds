@@ -1104,17 +1104,98 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
   }
 });
 
+// Helper to get a single record from the local repo
+const getRecordHelper = async (repo, collection, rkey) => {
+  const user = await getSingleUser(); // No req needed now as it uses process.env
+  if (!user) return null;
+  
+  // Check if repo matches our DID or handle (case-insensitive)
+  if (repo.toLowerCase() !== user.did.toLowerCase() && repo.toLowerCase() !== user.handle.toLowerCase()) {
+    return null;
+  }
+
+  try {
+    const storage = new TursoStorage();
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const value = await repoObj.getRecord(collection, rkey);
+    if (!value) return null;
+    
+    const cid = await repoObj.data.get(`${collection}/${rkey}`);
+    return { value, cid: cid.toString() };
+  } catch (err) {
+    console.error(`Error in getRecordHelper for ${collection}/${rkey}:`, err.message);
+    return null;
+  }
+};
+
+app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
+  try {
+    const { uris } = req.query;
+    const requestedUris = Array.isArray(uris) ? uris : [uris];
+    const user = await getSingleUser(req);
+    if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
+
+    const profileRes = await getRecordHelper(user.did, 'app.bsky.actor.profile', 'self');
+    const profile = profileRes?.value;
+    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
+
+    const author = {
+        did: user.did,
+        handle: user.handle,
+        displayName: profile?.displayName || user.handle,
+        avatar: profile?.avatar,
+        associated: {
+            activitySubscription: { allowSubscriptions: 'followers' }
+        },
+        labels: [],
+        createdAt: repoCreatedAt,
+        indexedAt: new Date().toISOString(),
+    };
+
+    const posts = [];
+    for (const uri of requestedUris) {
+        if (!uri) continue;
+        // at://did:plc:123/app.bsky.feed.post/456
+        const parts = uri.replace('at://', '').split('/');
+        const repo = parts[0];
+        const collection = parts[1];
+        const rkey = parts[2];
+
+        if (collection !== 'app.bsky.feed.post') continue;
+
+        const recordRes = await getRecordHelper(repo, collection, rkey);
+        if (recordRes) {
+            posts.push({
+                uri,
+                cid: recordRes.cid,
+                author,
+                record: recordRes.value,
+                replyCount: 0, // Placeholder
+                repostCount: 0,
+                likeCount: 0,
+                quoteCount: 0,
+                bookmarkCount: 0,
+                indexedAt: recordRes.value.createdAt || new Date().toISOString(),
+                labels: [],
+            });
+        }
+    }
+
+    res.json({ posts });
+  } catch (err) {
+    console.error('Error in getPosts:', err);
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
   const { repo, collection, rkey } = req.query;
-  const user = await getSingleUser(req);
-  if (!user || (repo !== user.did && repo !== user.handle)) return res.status(404).json({ error: 'RepoNotFound' });
-  
-  const storage = new TursoStorage();
-  const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-  const record = await repoObj.getRecord(collection, rkey);
+  const record = await getRecordHelper(repo, collection, rkey);
   
   if (!record) return res.status(404).json({ error: 'RecordNotFound' });
-  res.json({ uri: `at://${user.did}/${collection}/${rkey}`, value: record });
+  
+  const user = await getSingleUser(req);
+  res.json({ uri: `at://${user.did}/${collection}/${rkey}`, value: record.value, cid: record.cid });
 });
 
 app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
