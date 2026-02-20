@@ -198,7 +198,10 @@ export async function maybeInitRepo() {
       rev: repo.commit.rev,
       since: null,
       ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid || repo.cid }],
+      blobs: avatarBlob ? [CID.parse(avatarBlob.ref.$link)] : [],
       time: new Date().toISOString(),
+      rebase: false,
+      tooBig: false,
     }
   });
 
