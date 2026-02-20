@@ -1,5 +1,5 @@
 import { db } from './db.js';
-import { cborEncode } from '@atproto/common';
+import { cborEncode, cborDecode } from '@atproto/common';
 import { WebSocket } from 'ws';
 
 class Sequencer {
@@ -15,36 +15,47 @@ class Sequencer {
   }
 
   async backfill(ws, cursor) {
-    const res = await db.execute({
-      sql: 'SELECT * FROM sequencer WHERE seq > ? ORDER BY seq ASC',
-      args: [cursor]
-    });
-    for (const row of res.rows) {
-      ws.send(this.formatEvent(row));
+    console.log(`[SEQUENCER] Backfilling from cursor: ${cursor}`);
+    try {
+        const res = await db.execute({
+          sql: 'SELECT * FROM sequencer WHERE seq > ? ORDER BY seq ASC LIMIT 100',
+          args: [cursor]
+        });
+        for (const row of res.rows) {
+          ws.send(this.formatEvent(row));
+        }
+    } catch (err) {
+        console.error('[SEQUENCER] Backfill failed:', err);
     }
   }
 
   async sequenceEvent(evt) {
     const time = new Date().toISOString();
     
+    // 1. Insert placeholder to get the next sequence number
     const res = await db.execute({
       sql: 'INSERT INTO sequencer (did, type, event, time) VALUES (?, ?, ?, ?) RETURNING seq',
-      args: [evt.did, evt.type, Buffer.from(cborEncode(evt.event)), time]
+      args: [evt.did, evt.type, Buffer.from([0]), time] // Placeholder
     });
     
     const seq = res.rows[0].seq;
     
-    // Add seq to the event body for the firehose broadcast
+    // 2. Encode the FULL event including the seq
     const eventWithSeq = { ...evt.event, seq };
-    const encodedWithSeq = cborEncode(eventWithSeq);
+    const encoded = Buffer.from(cborEncode(eventWithSeq));
 
-    const fullEvent = this.formatEvent({
-        seq,
-        type: evt.type,
-        event: encodedWithSeq,
-        time
+    // 3. Update the database with the real encoded event
+    await db.execute({
+        sql: 'UPDATE sequencer SET event = ? WHERE seq = ?',
+        args: [encoded, seq]
     });
 
+    const fullEvent = this.formatEvent({
+        type: evt.type,
+        event: encoded
+    });
+
+    console.log(`[SEQUENCER] Broadcasting seq ${seq} to ${this.clients.size} clients`);
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(fullEvent);
