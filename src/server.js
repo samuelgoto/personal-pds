@@ -1047,13 +1047,14 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   try {
-    const user = await getSingleUser(req);
-    if (!user) return res.json({ repos: [] });
+    const pdsDid = (process.env.PDS_DID || '').trim();
+    const rootCid = await getRootCid();
+    if (!pdsDid || !rootCid) return res.json({ repos: [] });
 
     res.json({
         repos: [{
-            did: user.did,
-            head: user.root_cid,
+            did: pdsDid,
+            head: rootCid,
         }]
     });
   } catch (err) {
@@ -1063,6 +1064,22 @@ app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
   res.status(404).json({ error: 'MethodNotImplemented', message: 'Firehose not supported, use TAP sync' });
+});
+
+app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
+  const { did } = req.query;
+  const pdsDid = (process.env.PDS_DID || '').trim();
+  if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+  
+  const rootCid = await getRootCid();
+  if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
+
+  const storage = new TursoStorage();
+  const blocks = await storage.getRepoBlocks();
+  const car = await blocksToCarFile(CID.parse(rootCid), blocks);
+
+  res.setHeader('Content-Type', 'application/vnd.ipld.car');
+  res.send(Buffer.from(car));
 });
 
 app.head('/xrpc/com.atproto.sync.getRepo', (req, res) => res.status(200).end());
