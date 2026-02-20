@@ -61,8 +61,8 @@ app.use(async (req, res, next) => {
   } catch (err) {
     res.status(500).send(`Server Initialization Error: ${err.message}`);
   }
-import app, { getHost } from '../src/server.js';
-...
+});
+
 // For local development
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   initialize().then(() => {
