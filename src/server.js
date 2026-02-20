@@ -1009,6 +1009,7 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   try {
     const { did } = req.query;
+    console.log(`getHead request for ${did}. Headers: ${JSON.stringify(req.headers)}`);
     const user = await getSingleUser(req);
     if (!user || did !== user.did) {
         return res.status(404).json({ error: 'RepoNotFound' });
@@ -1016,6 +1017,32 @@ app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
 
     res.json({
         root: user.root_cid,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
+  try {
+    const { did } = req.query;
+    console.log(`getLatestCommit request for ${did}. Headers: ${JSON.stringify(req.headers)}`);
+    const user = await getSingleUser(req);
+    if (!user || did !== user.did) {
+        return res.status(404).json({ error: 'RepoNotFound' });
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT event FROM sequencer WHERE did = ? AND type = "commit" ORDER BY seq DESC LIMIT 1',
+      args: [user.did]
+    });
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'RepoNotFound' });
+    const event = cborDecode(new Uint8Array(result.rows[0].event));
+
+    res.json({
+        cid: user.root_cid,
+        rev: event.rev,
     });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
@@ -1039,14 +1066,14 @@ app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
+  console.log(`subscribeRepos request. Headers: ${JSON.stringify(req.headers)}`);
   res.status(426).send('Upgrade Required');
 });
 
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did } = req.query;
   const host = getHost(req);
-  const userAgent = req.headers['user-agent'] || 'unknown';
-  console.log(`getRepo request for ${did} from ${userAgent}`);
+  console.log(`getRepo request for ${did}. Headers: ${JSON.stringify(req.headers)}`);
   
   if (did !== formatDid(host)) {
     console.log(`getRepo 404: DID mismatch. Received: ${did}, Expected: ${formatDid(host)}`);
