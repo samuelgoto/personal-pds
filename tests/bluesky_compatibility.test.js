@@ -78,19 +78,6 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(res.headers['content-type']).toContain('text/plain');
   });
 
-  test('did.json should include alsoKnownAs and all verification method types', async () => {
-    const res = await axios.get(`${HOST}/.well-known/did.json`);
-    expect(res.status).toBe(200);
-    expect(res.data.id).toBe(userDid);
-    expect(res.data.alsoKnownAs).toContain(`at://${DOMAIN}`);
-    
-    const verificationMethods = res.data.verificationMethod;
-    expect(verificationMethods.some(m => m.type === 'Multikey')).toBe(true);
-    
-    // Check for correct ID standardization
-    expect(verificationMethods.some(m => m.id === '#atproto')).toBe(true);
-  });
-
   test('CORS preflight should allow all required atproto and bsky headers', async () => {
     const requestedHeaders = 'Content-Type, Authorization, atproto-accept-labelers, atproto-proxy-type, atproto-proxy, atproto-proxy-exp, atproto-content-type, x-bsky-topics, x-bsky-active-labelers';
     

@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { createHash } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import { cborEncode } from '@atproto/common';
 import axios from 'axios';
@@ -24,7 +25,7 @@ export async function runFullSetup(options = {}) {
   };
 
   // 1. Ensure .env exists (only if not in a test environment)
-  if (!process.env.NODE_ENV === 'test' && !fs.existsSync('.env')) {
+  if (!(process.env.NODE_ENV === 'test') && !fs.existsSync('.env')) {
     if (fs.existsSync('.env.example')) {
       fs.copyFileSync('.env.example', '.env');
     } else {
@@ -45,22 +46,36 @@ export async function runFullSetup(options = {}) {
     results.updatedEnv = true;
   }
 
-  // 4. Identity Setup (did:web vs did:plc)
+  // 4. Identity Setup (did:plc)
   let domain = providedDomain || (process.env.DOMAIN || 'localhost:3000').split(':')[0];
-  
-  if (!skipPlc && interactive && rl) {
-    const answer = await new Promise(r => rl.question(`Switch to did:plc for ${domain}? (y/N): `, r));
-    if (answer.toLowerCase() === 'y') {
-        const pdsDid = await registerPlc(domain, privKeyHex, rl);
-        if (pdsDid) {
-            process.env.PDS_DID = pdsDid;
-            updateEnvFile('PDS_DID', pdsDid);
-            results.updatedEnv = true;
+  let pdsDid = process.env.PDS_DID;
+
+  if (!pdsDid) {
+    if (skipPlc) {
+        // In tests or when skipped, we use a deterministic but unique placeholder for did:plc
+        const hash = createHash('sha256').update(domain).digest('hex').slice(0, 24);
+        pdsDid = `did:plc:${hash}`;
+        console.log(`Using placeholder identity: ${pdsDid}`);
+    } else if (interactive && rl) {
+        console.log(`No PDS_DID found. Starting did:plc registration for ${domain}...`);
+        pdsDid = await registerPlc(domain, privKeyHex, rl);
+        if (!pdsDid) {
+            console.log('Registration failed, using deterministic fallback for PDS_DID.');
+            const hash = createHash('sha256').update(domain + privKeyHex).digest('hex').slice(0, 24);
+            pdsDid = `did:plc:${hash}`;
         }
+    }
+
+    if (pdsDid) {
+        process.env.PDS_DID = pdsDid;
+        updateEnvFile('PDS_DID', pdsDid);
+        results.updatedEnv = true;
+    } else {
+        throw new Error('Identity setup failed. PDS_DID is required.');
     }
   }
 
-  const did = formatDid(domain);
+  const did = pdsDid;
   results.did = did;
 
   // 5. Repo Initialization
@@ -114,8 +129,7 @@ function updateEnvFile(key, value) {
   if (content.includes(`${key}=`)) {
     content = content.replace(new RegExp(`${key}=.*`), `${key}=${value}`);
   } else {
-    content += `
-${key}=${value}`;
+    content += `\n${key}=${value}`;
   }
   fs.writeFileSync('.env', content);
 }
@@ -129,22 +143,34 @@ async function registerPlc(domain, signingKeyHex, rl) {
     const op = {
       type: 'plc_operation',
       rotationKeys: [rotationKeypair.did()],
-      verificationMethods: { atproto: signingKeypair.did() },
+      verificationMethods: {
+        atproto: signingKeypair.did(),
+      },
       alsoKnownAs: [`at://${domain}`],
       services: {
-        atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: `https://${domain}` }
+        atproto_pds: {
+          type: 'AtprotoPersonalDataServer',
+          endpoint: `https://${domain}`,
+        },
       },
       prev: null,
     };
 
     const signature = await rotationKeypair.sign(cborEncode(op));
-    const signedOp = { ...op, sig: Buffer.from(signature).toString('base64url') };
+    const signedOp = {
+      ...op,
+      sig: Buffer.from(signature).toString('base64url'),
+    };
 
-    console.log('\nSubmitting to PLC Directory...');
-    const res = await axios.post('https://plc.directory/export', signedOp);
+    console.log('\nRegistering identity on https://plc.directory...');
+    
+    const hash = createHash('sha256').update(cborEncode(signedOp)).digest();
+    const plcDid = `did:plc:${Buffer.from(hash).toString('hex').slice(0, 24)}`;
+    
+    await axios.post(`https://plc.directory/${plcDid}`, signedOp);
     
     updateEnvFile('PLC_ROTATION_KEY', rotationKeyHex);
-    return res.data.did;
+    return plcDid;
   } catch (err) {
     console.error('PLC Registration failed:', err.response?.data || err.message);
     return null;

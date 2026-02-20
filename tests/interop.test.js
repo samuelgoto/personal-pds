@@ -57,12 +57,6 @@ describe('PDS Interoperability Tests', () => {
     if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
   });
 
-  test('should serve a valid DID document at /.well-known/did.json', async () => {
-    const res = await axios.get(`${HOST}/.well-known/did.json`);
-    expect(res.status).toBe(200);
-    expect(res.data.id).toBe(userDid);
-  });
-
   test('should serve a valid CAR file via getRepo', async () => {
     const loginRes = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
       identifier: 'localhost.test',

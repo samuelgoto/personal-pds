@@ -243,14 +243,6 @@ const getDidDoc = async (req, host) => {
   };
 };
 
-// did:web support
-app.get('/.well-known/did.json', async (req, res) => {
-  const host = getHost(req);
-  const doc = await getDidDoc(req, host);
-  if (!doc) return res.status(404).send('Not Configured');
-  res.json(doc);
-});
-
 app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
   try {
     const { did } = req.query;

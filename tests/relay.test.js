@@ -69,12 +69,8 @@ describe('Relay Interaction & Protocol Compliance', () => {
 
     await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, { hostname: HOST });
 
-    const didRes = await axios.get(`${PDS_URL}/.well-known/did.json`);
-    expect(didRes.status).toBe(200);
-    expect(didRes.data.id).toBe(userDid);
-
-    const repoRes = await axios.get(`${PDS_URL}/xrpc/com.atproto.sync.getRepo?did=${encodeURIComponent(userDid)}`, {
-        responseType: 'arraybuffer'
+    const repoRes = await axios.get(`${PDS_URL}/xrpc/com.atproto.sync.getRepo?did=${userDid}`, {
+      responseType: 'arraybuffer'
     });
     expect(repoRes.status).toBe(200);
     const { root } = await readCarWithRoot(new Uint8Array(repoRes.data));

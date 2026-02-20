@@ -7,9 +7,7 @@ export function formatDid(hostname) {
   if (process.env.PDS_DID) {
     return process.env.PDS_DID;
   }
-  // did:web spec: port must be encoded as %3A
-  const encoded = hostname.replace(':', '%3A');
-  return `did:web:${encoded}`;
+  throw new Error('PDS_DID environment variable is required for did:plc identity.');
 }
 
 export function createTid() {
