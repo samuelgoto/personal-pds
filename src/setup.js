@@ -3,11 +3,12 @@ import { createHash } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import { cborEncode } from '@atproto/common';
 import axios from 'axios';
+import { WebSocket } from 'ws';
 import dns from 'dns/promises';
 import { Resolver } from 'dns/promises';
 import { base32 } from 'multiformats/bases/base32';
 import { db as defaultDb, initDb } from './db.js';
-import { TursoStorage, loadRepo, getRootCid } from './repo.js';
+import { TursoStorage, loadRepo, getRootCid, maybeInitRepo } from './repo.js';
 import { sequencer } from './sequencer.js';
 import { blocksToCarFile, WriteOpAction } from '@atproto/repo';
 import { formatDid } from './util.js';
@@ -26,6 +27,9 @@ export async function runFullSetup(options = {}) {
     did: null,
     rootCid: null,
   };
+
+  // 0. Initialize repository
+  await maybeInitRepo();
 
   // 1. Ensure .env exists (only if not in a test environment)
   if (!(process.env.NODE_ENV === 'test') && !fs.existsSync('.env')) {
@@ -190,15 +194,14 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
 
     // 4. Relay Crawl & Health
     try {
-        console.log(`[4/5] Checking Relay Status (bsky.network)...`);
+        console.log(`[4/6] Checking Relay Status (bsky.network)...`);
         
         // Check if relay has indexed the head
         let relayHead = null;
         try {
             const headRes = await axios.get(`https://bsky.network/xrpc/com.atproto.sync.getHead?did=${pdsDid}`);
             relayHead = headRes.data.root;
-            const match = relayHead === results.rootCid ? "✅ MATCH" : "⚠️ MISMATCH";
-            console.log(`  ✅ Relay has indexed your head: ${relayHead} (${match})`);
+            console.log(`  ✅ Relay has indexed your head: ${relayHead}`);
         } catch (e) {
             console.log(`  ⚠️  Relay has NOT yet indexed your repo head.`);
         }
@@ -210,9 +213,42 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
         console.warn(`  ⚠️  Relay interaction failed: ${err.response?.data?.message || err.message}`);
     }
 
-    // 5. Bluesky AppView Visibility & Indexing
+    // 5. Firehose Accessibility Check
     try {
-        console.log(`[5/5] Checking visibility & indexing on Bluesky AppView (oyster)...`);
+        console.log(`[5/6] Checking Firehose (WebSocket) accessibility...`);
+        const wsUrl = `wss://${domain}/xrpc/com.atproto.sync.subscribeRepos`;
+        const ws = new WebSocket(wsUrl);
+        const wsOk = await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                ws.terminate();
+                resolve(false);
+            }, 5000);
+            ws.on('open', () => {
+                clearTimeout(timeout);
+                ws.close();
+                resolve(true);
+            });
+            ws.on('error', (err) => {
+                clearTimeout(timeout);
+                resolve(false);
+            });
+        });
+
+        if (wsOk) {
+            console.log(`  ✅ Firehose is accessible via WebSocket!`);
+        } else {
+            console.warn(`  ❌ Firehose is NOT accessible (WebSocket upgrade failed).`);
+            console.log(`     Advice: Heroku requires WebSockets. Ensure your PDS is correctly handling 'upgrade' events.`);
+            allOk = false;
+        }
+    } catch (err) {
+        console.warn(`  ⚠️  Firehose check encountered an error: ${err.message}`);
+        allOk = false;
+    }
+
+    // 6. Bluesky AppView Visibility & Indexing
+    try {
+        console.log(`[6/6] Checking visibility & indexing on Bluesky AppView (oyster)...`);
         const appViewBase = 'https://oyster.us-east.host.bsky.network';
         
         // Check handle resolution

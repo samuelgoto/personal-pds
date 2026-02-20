@@ -48,7 +48,6 @@ async function initialize() {
     throw new Error('TURSO_DATABASE_URL or DATABASE_URL environment variable is not set');
   }
   await initDb(db);
-  await maybeInitRepo();
   initialized = true;
   console.log('Initialization complete.');
 }
