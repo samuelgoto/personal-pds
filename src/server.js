@@ -275,12 +275,22 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   const { identifier, password } = req.body;
   const user = await getSingleUser(req);
-  if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
-  if (identifier !== user.handle && identifier !== user.did) return res.status(401).json({ error: 'InvalidIdentifier' });
-  if (password !== user.password) return res.status(401).json({ error: 'InvalidPassword' });
-  
-  const accessJwt = createToken(user.did, user.handle);
-  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
+  if (!user) {
+    console.log('Login failed: Server not initialized (no user)');
+    return res.status(500).json({ error: 'ServerNotInitialized' });
+  }
+
+  if (identifier !== user.handle && identifier !== user.did) {
+    console.log(`Login failed: Invalid identifier. Received: ${identifier}, Expected: ${user.handle} or ${user.did}`);
+    return res.status(401).json({ error: 'InvalidIdentifier' });
+  }
+
+  if (password !== user.password) {
+    console.log(`Login failed: Password mismatch for ${identifier}`);
+    return res.status(401).json({ error: 'InvalidPassword' });
+  }
+
+  const accessJwt = createToken(user.did, user.handle);  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
 });
 
 app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
