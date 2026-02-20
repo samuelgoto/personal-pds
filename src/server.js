@@ -1062,8 +1062,34 @@ app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   }
 });
 
-app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
+// Aggressive 404 for subscribeRepos to force TAP fallback
+app.use('/xrpc/com.atproto.sync.subscribeRepos', (req, res) => {
+  res.setHeader('Connection', 'close');
   res.status(404).json({ error: 'MethodNotImplemented', message: 'Firehose not supported, use TAP sync' });
+});
+
+app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
+  try {
+    const { did, cids } = req.query;
+    const pdsDid = (process.env.PDS_DID || '').trim();
+    if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+
+    const storage = new TursoStorage();
+    const blocks = [];
+    const requestedCids = Array.isArray(cids) ? cids : [cids];
+    
+    for (const cidStr of requestedCids) {
+      if (!cidStr) continue;
+      const block = await storage.get(CID.parse(cidStr));
+      if (block) blocks.push(block);
+    }
+
+    const car = await blocksToCarFile(CID.parse(requestedCids[0]), blocks);
+    res.setHeader('Content-Type', 'application/vnd.ipld.car');
+    res.send(Buffer.from(car));
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
 });
 
 app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
