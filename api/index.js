@@ -2,7 +2,7 @@ import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
 import { initDb, db } from '../src/db.js';
-import app, { wss, getHost } from '../src/server.js';
+import app, { getHost } from '../src/server.js';
 import { maybeInitRepo } from '../src/repo.js';
 
 const PORT = process.env.PORT || 3000;
