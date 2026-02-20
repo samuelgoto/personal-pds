@@ -61,18 +61,12 @@ app.use(async (req, res, next) => {
   } catch (err) {
     res.status(500).send(`Server Initialization Error: ${err.message}`);
   }
-});
-
+import app, { getHost } from '../src/server.js';
+...
 // For local development
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   initialize().then(() => {
     const server = http.createServer(app);
-
-    server.on('upgrade', (request, socket, head) => {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
-      });
-    });
 
     server.listen(PORT, () => {
       console.log(`Minimal PDS listening on port ${PORT}`);
