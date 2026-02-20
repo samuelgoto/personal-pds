@@ -1055,15 +1055,15 @@ app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   try {
     const { did } = req.query;
     const pdsDid = (process.env.PDS_DID || '').trim();
-    console.log(`TAP getHead: did=${did}, pdsDid=${pdsDid}`);
-    if (did && pdsDid && did !== pdsDid) {
-        console.log(`TAP getHead: DID mismatch: ${did} !== ${pdsDid}`);
+    console.log(`[SYNC] getHead: requested=${did}, authoritative=${pdsDid}`);
+    if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) {
+        console.log(`[SYNC] getHead: DID mismatch: ${did} !== ${pdsDid}`);
         return res.status(404).json({ error: 'RepoNotFound' });
     }
 
     const rootCid = await getRootCid();
     if (!rootCid) {
-        console.log(`TAP getHead: Root CID not found`);
+        console.log(`[SYNC] getHead: Root CID not found`);
         return res.status(404).json({ error: 'RepoNotFound' });
     }
 
@@ -1166,30 +1166,6 @@ app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
   
   const rootCid = await getRootCid();
   if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
-
-  const storage = new TursoStorage();
-  const blocks = await storage.getRepoBlocks();
-  const car = await blocksToCarFile(CID.parse(rootCid), blocks);
-
-  res.setHeader('Content-Type', 'application/vnd.ipld.car');
-  res.send(Buffer.from(car));
-});
-
-app.head('/xrpc/com.atproto.sync.getRepo', (req, res) => res.status(200).end());
-app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
-  const { did, since } = req.query;
-  const pdsDid = (process.env.PDS_DID || '').trim();
-  console.log(`TAP getRepo: did=${did}, pdsDid=${pdsDid}, since=${since}`);
-  if (did && pdsDid && did !== pdsDid) {
-    console.log(`TAP getRepo: DID mismatch: ${did} !== ${pdsDid}`);
-    return res.status(404).json({ error: 'RepoNotFound' });
-  }
-  
-  const rootCid = await getRootCid();
-  if (!rootCid) {
-    console.log(`TAP getRepo: Root CID not found`);
-    return res.status(404).json({ error: 'RepoNotFound' });
-  }
 
   const storage = new TursoStorage();
   const blocks = await storage.getRepoBlocks();
