@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import { cborEncode } from '@atproto/common';
 import axios from 'axios';
+import { base32 } from 'multiformats/bases/base32';
 import { db as defaultDb, initDb } from './db.js';
 import { TursoStorage, loadRepo, getRootCid } from './repo.js';
 import { sequencer } from './sequencer.js';
@@ -50,20 +51,15 @@ export async function runFullSetup(options = {}) {
   let domain = providedDomain || (process.env.DOMAIN || 'localhost:3000').split(':')[0];
   let pdsDid = process.env.PDS_DID;
 
-  if (!pdsDid) {
+  if (!pdsDid || !pdsDid.startsWith('did:plc:')) {
     if (skipPlc) {
         // In tests or when skipped, we use a deterministic but unique placeholder for did:plc
         const hash = createHash('sha256').update(domain).digest('hex').slice(0, 24);
         pdsDid = `did:plc:${hash}`;
         console.log(`Using placeholder identity: ${pdsDid}`);
     } else if (interactive && rl) {
-        console.log(`No PDS_DID found. Starting did:plc registration for ${domain}...`);
+        console.log(`No valid PDS_DID found. Starting did:plc registration for ${domain}...`);
         pdsDid = await registerPlc(domain, privKeyHex, rl);
-        if (!pdsDid) {
-            console.log('Registration failed, using deterministic fallback for PDS_DID.');
-            const hash = createHash('sha256').update(domain + privKeyHex).digest('hex').slice(0, 24);
-            pdsDid = `did:plc:${hash}`;
-        }
     }
 
     if (pdsDid) {
@@ -73,6 +69,24 @@ export async function runFullSetup(options = {}) {
     } else {
         throw new Error('Identity setup failed. PDS_DID is required.');
     }
+  }
+
+  // Verification step: check if DID resolves
+  if (!skipPlc && pdsDid.startsWith('did:plc:')) {
+      console.log(`Verifying resolution for ${pdsDid}...`);
+      try {
+          const resolveRes = await axios.get(`https://plc.directory/${pdsDid}`);
+          console.log(`Successfully resolved DID! PDS endpoint: ${resolveRes.data.service?.[0]?.serviceEndpoint}`);
+      } catch (err) {
+          console.warn(`Warning: Could not resolve DID ${pdsDid} on plc.directory. It might still be propagating.`);
+          if (interactive && rl) {
+              const retry = await new Promise(r => rl.question('Resolution failed. Attempt registration again? (y/N): ', r));
+              if (retry.toLowerCase() === 'y') {
+                  const newDid = await registerPlc(domain, privKeyHex, rl);
+                  if (newDid) return runFullSetup({ ...options, domain });
+              }
+          }
+      }
   }
 
   const did = pdsDid;
@@ -140,6 +154,7 @@ async function registerPlc(domain, signingKeyHex, rl) {
     const rotationKeypair = await crypto.Secp256k1Keypair.create({ exportable: true });
     const rotationKeyHex = Buffer.from(await rotationKeypair.export()).toString('hex');
     
+    // A 'create' operation for did:plc
     const op = {
       type: 'plc_operation',
       rotationKeys: [rotationKeypair.did()],
@@ -156,16 +171,22 @@ async function registerPlc(domain, signingKeyHex, rl) {
       prev: null,
     };
 
+    // The signature must be base64url encoded
     const signature = await rotationKeypair.sign(cborEncode(op));
     const signedOp = {
       ...op,
       sig: Buffer.from(signature).toString('base64url'),
     };
 
-    console.log('\nRegistering identity on https://plc.directory...');
-    
+    // Correct DID calculation: 
+    // did:plc: + base32(sha256(signed genesis op)).slice(0, 24)
     const hash = createHash('sha256').update(cborEncode(signedOp)).digest();
-    const plcDid = `did:plc:${Buffer.from(hash).toString('hex').slice(0, 24)}`;
+    // base32.encode returns a string with 'b' prefix usually, we need to handle that
+    const encoded = base32.encode(hash).slice(1); // strip prefix
+    const plcDid = `did:plc:${encoded.slice(0, 24)}`;
+
+    console.log(`\nCalculated DID: ${plcDid}`);
+    console.log('Registering identity on https://plc.directory...');
     
     await axios.post(`https://plc.directory/${plcDid}`, signedOp);
     
