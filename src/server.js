@@ -225,16 +225,16 @@ const getDidDoc = async (req, host) => {
     "alsoKnownAs": [`at://${host}`],
     "verificationMethod": [
       {
-        "id": "#atproto",
+        "id": `${did}#atproto`,
         "type": "Multikey",
         "controller": did,
         "publicKeyMultibase": keypair.did().split(':').pop()
       }
     ],
-    "authentication": ["#atproto"],
-    "assertionMethod": ["#atproto"],
-    "capabilityInvocation": ["#atproto"],
-    "capabilityDelegation": ["#atproto"],
+    "authentication": [`${did}#atproto`],
+    "assertionMethod": [`${did}#atproto`],
+    "capabilityInvocation": [`${did}#atproto`],
+    "capabilityDelegation": [`${did}#atproto`],
     "service": [{
       "id": "#atproto_pds",
       "type": "AtprotoPersonalDataServer",
