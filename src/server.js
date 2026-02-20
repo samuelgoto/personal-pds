@@ -1123,6 +1123,10 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   }
 });
 
+app.get('/xrpc/_health', (req, res) => {
+  res.json({ status: 'ok', version: '1.0.0' });
+});
+
 app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
   try {
     const { did } = req.query;
