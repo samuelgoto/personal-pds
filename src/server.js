@@ -23,34 +23,46 @@ wss.on('connection', (ws) => {
 });
 
 export const broadcastRepoUpdate = async (did, rootCid, event) => {
-    const storage = new TursoStorage();
-    const blocks = await storage.getRepoBlocks();
-    const car = await blocksToCarFile(CID.parse(rootCid), blocks);
-    
-    // ATProto Firehose Commit Event Body
-    const message = {
-        repo: did,
-        commit: CID.parse(rootCid),
-        blocks: new Uint8Array(car),
-        rev: event.rev,
-        since: event.since || null,
-        ops: event.ops || [],
-        blobs: [],
-        time: event.time || new Date().toISOString(),
-        rebase: false,
-        tooBig: false,
-    };
+    console.log(`[FIREHOSE] Broadcasting repo update: did=${did}, rootCid=${rootCid}. Active subscribers: ${firehoseSubscribers.size}`);
+    try {
+        const storage = new TursoStorage();
+        const blocks = await storage.getRepoBlocks();
+        const car = await blocksToCarFile(CID.parse(rootCid), blocks);
+        
+        // Ensure all CIDs in ops are proper CID objects for CBOR encoding
+        const formattedOps = (event.ops || []).map(op => ({
+            ...op,
+            cid: op.cid ? (typeof op.cid === 'string' ? CID.parse(op.cid) : op.cid) : null
+        }));
 
-    const header = { t: '#commit', op: 1 };
-    const encodedHeader = cborEncode(header);
-    const encodedMessage = cborEncode(message);
-    const frame = Buffer.concat([Buffer.from(encodedHeader), Buffer.from(encodedMessage)]);
+        // ATProto Firehose Commit Event Body
+        const message = {
+            repo: did,
+            commit: CID.parse(rootCid),
+            blocks: new Uint8Array(car),
+            rev: event.rev,
+            since: event.since || null,
+            ops: formattedOps,
+            blobs: [],
+            time: event.time || new Date().toISOString(),
+            rebase: false,
+            tooBig: false,
+        };
 
-    firehoseSubscribers.forEach(ws => {
-        if (ws.readyState === 1) { // OPEN
-            ws.send(frame);
-        }
-    });
+        const header = { t: '#commit', op: 1 };
+        const encodedHeader = cborEncode(header);
+        const encodedMessage = cborEncode(message);
+        const frame = Buffer.concat([Buffer.from(encodedHeader), Buffer.from(encodedMessage)]);
+
+        firehoseSubscribers.forEach(ws => {
+            if (ws.readyState === 1) { // OPEN
+                ws.send(frame);
+            }
+        });
+        console.log(`[FIREHOSE] Frame sent to ${firehoseSubscribers.size} subscribers`);
+    } catch (err) {
+        console.error('[FIREHOSE] Broadcast failed:', err);
+    }
 };
 
 // 1. CORS middleware (Absolute top)
