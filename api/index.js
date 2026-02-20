@@ -40,39 +40,37 @@ export async function pingRelay(hostname) {
 let initialized = false;
 async function initialize() {
   if (initialized) return;
+  console.log('Initializing PDS...');
   if (!process.env.PASSWORD) {
     throw new Error('PASSWORD environment variable is not set');
+  }
+  if (!process.env.TURSO_URL) {
+    throw new Error('TURSO_URL environment variable is not set');
   }
   await initDb(db);
   await maybeInitRepo();
   initialized = true;
+  console.log('Initialization complete.');
 }
 
-// Global ping status to ensure we only ping once per session
-let pinged = false;
-
-// Middleware to ensure initialization on serverless platforms
-app.use(async (req, res, next) => {
-  try {
-    await initialize();
-    const host = getHost(req);
-    if (!pinged && host) {
-        pinged = true;
-        pingRelay(host).catch(console.error);
-    }
-    next();
-  } catch (err) {
-    res.status(500).send(`Server Initialization Error: ${err.message}`);
-  }
+// Global error handlers for better Heroku debugging
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
 });
 
 // Start the server
+console.log('Starting server sequence...');
 initialize().then(() => {
   const serverInst = http.createServer(app);
 
   // Handle WebSocket upgrades for the firehose
   serverInst.on('upgrade', (request, socket, head) => {
     if (request.url.startsWith('/xrpc/com.atproto.sync.subscribeRepos')) {
+      console.log('Handling firehose upgrade request');
       server.wss.handleUpgrade(request, socket, head, (ws) => {
         server.wss.emit('connection', ws, request);
       });
@@ -83,8 +81,12 @@ initialize().then(() => {
 
   serverInst.listen(PORT, () => {
     console.log(`Minimal PDS listening on port ${PORT}`);
+    console.log(`Authoritative Domain: ${process.env.DOMAIN || 'not set'}`);
   });
-}).catch(console.error);
+}).catch(err => {
+  console.error('CRITICAL STARTUP ERROR:', err);
+  process.exit(1);
+});
 
 // Export the app for Vercel
 export default app;
