@@ -133,8 +133,8 @@ export async function maybeInitRepo() {
   if (staticAvatar) {
     console.log(`Using static avatar file: ${staticAvatar.cid}`);
     await db.execute({
-        sql: "INSERT OR REPLACE INTO blobs (cid, mime_type, content, created_at) VALUES (?, ?, ?, ?)",
-        args: [staticAvatar.cid, staticAvatar.mimeType, staticAvatar.content, new Date().toISOString()]
+        sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",
+        args: [staticAvatar.cid, did, staticAvatar.mimeType, staticAvatar.content, new Date().toISOString()]
     });
     avatarBlob = {
         $type: 'blob',
@@ -152,8 +152,8 @@ export async function maybeInitRepo() {
         const cid = `bafybe${hash}`;
 
         await db.execute({
-            sql: "INSERT OR REPLACE INTO blobs (cid, mime_type, content, created_at) VALUES (?, ?, ?, ?)",
-            args: [cid, mimeType, content, new Date().toISOString()]
+            sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",
+            args: [cid, did, mimeType, content, new Date().toISOString()]
         });
 
         avatarBlob = {

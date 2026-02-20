@@ -18,6 +18,7 @@ export async function initDb(client) {
     )`,
     `CREATE TABLE IF NOT EXISTS blobs (
       cid TEXT PRIMARY KEY,
+      did TEXT NOT NULL,
       mime_type TEXT NOT NULL,
       content BLOB NOT NULL,
       created_at TEXT NOT NULL
