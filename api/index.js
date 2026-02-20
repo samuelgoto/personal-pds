@@ -60,6 +60,8 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (err) => {
   console.error('Uncaught Exception:', err);
   process.exit(1);
+});
+
 // Start the server
 console.log('Starting server sequence...');
 initialize().then(() => {
@@ -83,7 +85,7 @@ initialize().then(() => {
     console.log(`Minimal PDS listening on port ${PORT}`);
     const domain = process.env.DOMAIN || 'pds.sgo.to';
     console.log(`Authoritative Domain: ${domain}`);
-
+    
     // Proactively ping relay on startup to trigger crawl
     // We wait 20s for Heroku routing to fully stabilize
     setTimeout(async () => {
@@ -105,7 +107,7 @@ initialize().then(() => {
                     console.log('✅ Relay ping succeeded!');
                     break;
                 }
-                console.log(`Ping failed: ${result.error?.message || result.message || 'Unknown error'}`);
+                console.log(`Ping failed: ${JSON.stringify(result.error || result.message || 'Unknown error')}`);
             } catch (e) {
                 console.log(`Ping error: ${e.message}`);
             }
