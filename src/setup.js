@@ -248,74 +248,22 @@ async function verifyIdentity(pdsDid, domain, interactive, rl, options, privKeyH
         console.warn(`  ⚠️  AppView check failed: ${err.message}`);
         allOk = false;
     }
-if (!allOk) {
-    console.log(`\n--- 🛠️  Troubleshooting Advice ---`);
-    console.log(`1. Ensure Vercel environment variables are correct (PDS_DID, PRIVATE_KEY).`);
-    console.log(`2. DNS: Add a TXT record at _atproto.${domain} with value: did=${pdsDid}`);
-    console.log(`3. Wait: Network propagation can take 5-10 minutes.`);
 
-    if (interactive && rl && !rl.closed) {
-        const answer = await new Promise(r => rl.question('\nOptions: [v]erify again, [u]pdate profile (forces fresh crawl), [r]egister again, [q]uit: ', r));
-        if (answer.toLowerCase() === 'v') return runFullSetup({ ...options, domain, rl });
-        if (answer.toLowerCase() === 'u') {
-            await forceRepoUpdate(pdsDid, domain, privKeyHex);
-            return runFullSetup({ ...options, domain, rl });
+    if (!allOk) {
+        console.log(`\n--- 🛠️  Troubleshooting Advice ---`);
+        console.log(`1. Ensure Vercel environment variables are correct (PDS_DID, PRIVATE_KEY).`);
+        console.log(`2. DNS: Add a TXT record at _atproto.${domain} with value: did=${pdsDid}`);
+        console.log(`3. Wait: Network propagation can take 5-10 minutes.`);
+        
+        if (interactive && rl && !rl.closed) {
+            const retry = await new Promise(r => rl.question('\nIdentity is not fully setup. Try verifying again? (y/N): ', r));
+            if (retry.toLowerCase() === 'y') {
+                return runFullSetup({ ...options, domain, rl });
+            }
         }
-        if (answer.toLowerCase() === 'r') {
-            const newDid = await registerPlc(domain, privKeyHex, rl);
-            if (newDid) return runFullSetup({ ...options, domain, rl });
-        }
+    } else {
+        console.log(`\n✨ Identity looks perfect! You are live on the AT Protocol.`);
     }
-} else {
-    console.log(`\n✨ Identity looks perfect! You are live on the AT Protocol.`);
-    if (interactive && rl && !rl.closed) {
-        const answer = await new Promise(r => rl.question('\nOptions: [u]pdate profile (forces fresh crawl), [q]uit: ', r));
-        if (answer.toLowerCase() === 'u') {
-            await forceRepoUpdate(pdsDid, domain, privKeyHex);
-            return runFullSetup({ ...options, domain, rl });
-        }
-    }
-}
-}
-
-async function forceRepoUpdate(did, domain, privKeyHex) {
-console.log(`\nUpdating profile to trigger Relay crawl...`);
-const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
-const storage = new TursoStorage();
-const rootCid = await getRootCid();
-
-let repo = await Repo.load(storage, CID.parse(rootCid));
-const current = await repo.getRecord('app.bsky.actor.profile', 'self');
-
-repo = await repo.applyWrites([{
-    action: WriteOpAction.Update,
-    collection: 'app.bsky.actor.profile',
-    rkey: 'self',
-    record: {
-        ...current,
-        description: (current.description || '') + ' ', // Subtle change to force new CID
-        createdAt: current.createdAt || new Date().toISOString(),
-    },
-}], keypair);
-
-const recordCid = await repo.data.get('app.bsky.actor.profile/self');
-const carBlocks = await storage.getRepoBlocks();
-const blocks = await blocksToCarFile(repo.cid, carBlocks);
-
-await sequencer.sequenceEvent({
-    did,
-    type: 'commit',
-    event: {
-        repo: did,
-        commit: repo.cid,
-        blocks,
-        rev: repo.commit.rev,
-        since: rootCid,
-        ops: [{ action: 'update', path: 'app.bsky.actor.profile/self', cid: recordCid }],
-        time: new Date().toISOString(),
-    }
-});
-console.log(`✅ Profile updated! New Root CID: ${repo.cid.toString()}`);
 }
 
 function updateEnvFile(key, value) {
