@@ -260,10 +260,11 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   const { handle } = req.query;
   const user = await getSingleUser(req);
   if (!user) return res.status(404).json({ error: 'HandleNotFound' });
-  
+
   // If no handle provided, or it matches our domain, return our DID
   if (!handle || handle === user.handle || handle === 'self') {
     return res.json({ did: user.did.trim() });
@@ -271,7 +272,6 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
 
   return res.status(404).json({ error: 'HandleNotFound' });
 });
-
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   const { identifier, password } = req.body;
   const user = await getSingleUser(req);
