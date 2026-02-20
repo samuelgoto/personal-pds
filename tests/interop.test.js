@@ -35,8 +35,8 @@ describe('PDS Interoperability Tests', () => {
     const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
     const privKey = await keypair.export();
     process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
-    process.env.DOMAIN = `localhost:${PORT}`;
-    userDid = formatDid(`localhost:${PORT}`);
+    process.env.DOMAIN = `localhost`;
+    userDid = formatDid(`localhost`);
     
     await maybeInitRepo();
 

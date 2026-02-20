@@ -39,8 +39,8 @@ describe('Relay Interaction & Protocol Compliance', () => {
     const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
     const privKey = await keypair.export();
     process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
-    process.env.DOMAIN = HOST;
-    userDid = formatDid(HOST);
+    process.env.DOMAIN = `localhost`;
+    userDid = formatDid(`localhost`);
     
     await maybeInitRepo();
 

@@ -43,7 +43,7 @@ async function setup() {
     }
   ], keypair);
   
-  const recordCid = await repo.mst.get('app.bsky.actor.profile/self');
+  const recordCid = await repo.data.get('app.bsky.actor.profile/self');
   const carBlocks = await storage.getRepoBlocks();
   const blocks = await blocksToCarFile(repo.cid, carBlocks);
 
@@ -56,7 +56,7 @@ async function setup() {
       blocks: blocks,
       rev: repo.commit.rev,
       since: null,
-      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid }],
+      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid || repo.cid }],
       time: new Date().toISOString(),
     }
   });
