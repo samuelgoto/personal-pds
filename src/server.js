@@ -765,9 +765,8 @@ app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', l
     const content = req.body;
     const mimeType = req.headers['content-type'] || 'application/octet-stream';
     
-    // Simple hash for CID-like identifier
-    const hash = createHash('sha256').update(content).digest('hex');
-    const cid = `bafybe${hash}`; // Fake CID for now
+    // Generate valid CIDv1
+    const cid = await createBlobCid(content);
 
     await db.execute({
       sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",

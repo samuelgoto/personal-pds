@@ -128,7 +128,7 @@ export async function maybeInitRepo() {
   
   // 2. Handle Avatar if provided
   let avatarBlob = undefined;
-  const staticAvatar = getStaticAvatar();
+  const staticAvatar = await getStaticAvatar();
   
   if (staticAvatar) {
     console.log(`Using static avatar file: ${staticAvatar.cid}`);
@@ -148,8 +148,7 @@ export async function maybeInitRepo() {
         const response = await axios.get(process.env.AVATAR_URL, { responseType: 'arraybuffer' });
         const content = Buffer.from(response.data);
         const mimeType = response.headers['content-type'] || 'image/png';
-        const hash = createHash('sha256').update(content).digest('hex');
-        const cid = `bafybe${hash}`;
+        const cid = await createBlobCid(content);
 
         await db.execute({
             sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",
