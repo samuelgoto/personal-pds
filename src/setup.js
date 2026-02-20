@@ -28,9 +28,6 @@ export async function runFullSetup(options = {}) {
     rootCid: null,
   };
 
-  // 0. Initialize repository
-  await maybeInitRepo();
-
   // 1. Ensure .env exists (only if not in a test environment)
   if (!(process.env.NODE_ENV === 'test') && !fs.existsSync('.env')) {
     if (fs.existsSync('.env.example')) {
@@ -43,7 +40,10 @@ export async function runFullSetup(options = {}) {
   // 2. Initialize Database
   await initDb(db);
 
-  // 3. Handle Private Key
+  // 3. Initialize repository
+  await maybeInitRepo();
+
+  // 4. Handle Private Key
   let privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) {
     const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
