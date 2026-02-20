@@ -835,7 +835,6 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     
-    // Get actual CID of the record
     const recordCid = await repoObj.data.get(`${collection}/${rkey}`);
     const record = await repoObj.getRecord(collection, rkey);
 
@@ -859,10 +858,25 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
         indexedAt: new Date().toISOString(),
     };
 
+    // Find replies in the repository
+    const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
+    const directReplies = [];
+    for (const entry of allPostEntries) {
+        const postRkey = entry.k.split('/').pop();
+        if (postRkey === rkey) continue; // Skip the anchor post itself
+        
+        const postRecord = await repoObj.getRecord('app.bsky.feed.post', postRkey);
+        if (postRecord?.reply?.parent?.uri === canonicalUri) {
+            directReplies.push({
+                uri: `at://${user.did}/app.bsky.feed.post/${postRkey}`,
+                cid: entry.v.toString(),
+                record: postRecord
+            });
+        }
+    }
+
     if (isV2) {
-        // Build the thread as an array, matching the latest getPostThreadV2 spec
-        return res.json({
-          thread: [
+        const thread = [
             {
               uri: canonicalUri,
               depth: 0,
@@ -873,7 +887,7 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
                   cid: recordCid.toString(),
                   author,
                   record,
-                  replyCount: 0,
+                  replyCount: directReplies.length,
                   repostCount: 0,
                   likeCount: 0,
                   quoteCount: 0,
@@ -888,11 +902,41 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
                 mutedByViewer: false
               }
             }
-          ],
-          hasOtherReplies: false
-        });
+        ];
+
+        // Add direct replies at depth 1
+        for (const reply of directReplies) {
+            thread.push({
+                uri: reply.uri,
+                depth: 1,
+                value: {
+                    $type: "app.bsky.unspecced.defs#threadItemPost",
+                    post: {
+                        uri: reply.uri,
+                        cid: reply.cid,
+                        author, // In single user PDS, author is the same
+                        record: reply.record,
+                        replyCount: 0,
+                        repostCount: 0,
+                        likeCount: 0,
+                        quoteCount: 0,
+                        bookmarkCount: 0,
+                        indexedAt: reply.record.createdAt || new Date().toISOString(),
+                        labels: []
+                    },
+                    moreParents: false,
+                    moreReplies: 0,
+                    opThread: false,
+                    hiddenByThreadgate: false,
+                    mutedByViewer: false
+                }
+            });
+        }
+
+        return res.json({ thread, hasOtherReplies: false });
     }
 
+    // Legacy/Standard V1 structure
     res.json({
         thread: {
             $type: 'app.bsky.feed.defs#threadViewPost',
@@ -901,7 +945,7 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
                 cid: recordCid.toString(),
                 author,
                 record,
-                replyCount: 0,
+                replyCount: directReplies.length,
                 repostCount: 0,
                 likeCount: 0,
                 quoteCount: 0,
@@ -910,7 +954,24 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
                 viewer: {},
                 labels: [],
             },
-            replies: [],
+            replies: directReplies.map(reply => ({
+                $type: 'app.bsky.feed.defs#threadViewPost',
+                post: {
+                    uri: reply.uri,
+                    cid: reply.cid,
+                    author,
+                    record: reply.record,
+                    replyCount: 0,
+                    repostCount: 0,
+                    likeCount: 0,
+                    quoteCount: 0,
+                    bookmarkCount: 0,
+                    indexedAt: reply.record.createdAt || new Date().toISOString(),
+                    viewer: {},
+                    labels: [],
+                },
+                replies: []
+            })),
             threadContext: {},
         }
     });
