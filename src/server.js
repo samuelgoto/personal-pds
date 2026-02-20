@@ -39,13 +39,10 @@ app.use((req, res, next) => {
 // 3. JSON parser
 app.use(express.json());
 
-export const wss = new WebSocketServer({ noServer: true });
-
-
-wss.on('connection', (ws, req) => {
-  const url = new URL(req.url || '', `http://${req.headers.host}`);
-  const cursor = url.searchParams.get('cursor');
-  sequencer.addClient(ws, cursor ? parseInt(cursor, 10) : undefined);
+// 4. Favicon handler
+app.get('/favicon.ico', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  res.status(204).end();
 });
 
 // Helper to get system state
