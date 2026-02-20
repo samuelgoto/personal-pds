@@ -91,7 +91,7 @@ export const getHost = (req) => {
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
   const domain = (process.env.DOMAIN || 'localhost').split(':')[0];
-  const handle = process.env.HANDLE || (domain === 'localhost' ? 'localhost.test' : domain);
+  const handle = domain === 'localhost' ? 'localhost.test' : domain;
   
   const did = (process.env.PDS_DID || formatDid(domain)).trim();
   const privKeyHex = process.env.PRIVATE_KEY;
@@ -286,12 +286,8 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   const user = await getSingleUser(req);
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
 
-  const domain = (process.env.DOMAIN || '').trim();
-  const envHandle = (process.env.HANDLE || '').trim();
-  const host = getHost(req);
-
-  // 1. First check if it's our own handle
-  if (!handle || handle === user.handle || handle === domain || handle === host || handle === envHandle || handle === 'self' || handle === 'sgo.to') {
+  // 1. First check if it's our own handle (strictly matching the domain)
+  if (!handle || handle === user.handle || handle === 'self') {
     console.log(`[RESOLVE] Local handle resolved: ${handle || 'default'} -> ${user.did}`);
     return res.json({ did: user.did.trim() });
   }
@@ -299,7 +295,6 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   // 2. Otherwise, proxy the request to a public AppView to resolve other handles
   try {
     console.log(`[RESOLVE] Proxying handle resolution for: ${handle}`);
-    // Use a public AppView or the one identified in setup.js
     const appView = 'https://bsky.social';
     const response = await axios.get(`${appView}/xrpc/com.atproto.identity.resolveHandle?handle=${handle}`, {
         timeout: 5000,
