@@ -575,11 +575,13 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
     });
 
     // Broadcast to WebSocket firehose
-    broadcastRepoUpdate(user.did, updatedRepo.cid.toString(), {
+    // We await this to ensure the Relay receives it before the request finishes
+    console.log(`[FIREHOSE] Triggering broadcast for ${user.did}...`);
+    await broadcastRepoUpdate(user.did, updatedRepo.cid.toString(), {
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
         ops: ops,
-    }).catch(console.error);
+    });
 
     res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
   } catch (err) {
