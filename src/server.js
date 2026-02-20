@@ -1158,7 +1158,10 @@ app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   try {
     const pdsDid = (process.env.PDS_DID || '').trim();
     const rootCid = await getRootCid();
-    if (!pdsDid || !rootCid) return res.json({ repos: [] });
+    if (!pdsDid || !rootCid) {
+        console.log(`TAP listRepos: PDS_DID or Root CID not found`);
+        return res.json({ repos: [] });
+    }
 
     res.json({
         repos: [{

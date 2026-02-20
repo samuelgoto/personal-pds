@@ -69,14 +69,14 @@ initialize().then(() => {
 
   // Handle WebSocket upgrades for the firehose
   serverInst.on('upgrade', (request, socket, head) => {
-    const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-    if (pathname === '/xrpc/com.atproto.sync.subscribeRepos') {
-      console.log('Handling firehose upgrade request for', pathname);
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    if (url.pathname.startsWith('/xrpc/com.atproto.sync.subscribeRepos')) {
+      console.log('Handling firehose upgrade request for', url.pathname);
       server.wss.handleUpgrade(request, socket, head, (ws) => {
         server.wss.emit('connection', ws, request);
       });
     } else {
-      console.log('Rejecting upgrade request for', pathname);
+      console.log('Rejecting upgrade request for', url.pathname);
       socket.destroy();
     }
   });
