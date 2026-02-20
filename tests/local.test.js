@@ -12,6 +12,7 @@ import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runFullSetup } from '../src/setup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,18 +30,13 @@ describe('PDS Local Tests', () => {
 
   beforeAll(async () => {
     process.env.PASSWORD = PASSWORD;
+    process.env.DOMAIN = `localhost:${PORT}`;
     const dbName = `test-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
-    await initDb(testDb);
 
-    const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
-    const privKey = await keypair.export();
-    process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
-    process.env.DOMAIN = `localhost:${PORT}`;
-    
-    await maybeInitRepo();
+    await runFullSetup({ db: testDb, skipPlc: true });
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {

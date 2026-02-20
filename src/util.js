@@ -4,6 +4,9 @@ import { createHash } from 'crypto';
 import { TID } from '@atproto/common';
 
 export function formatDid(hostname) {
+  if (process.env.PDS_DID) {
+    return process.env.PDS_DID;
+  }
   // did:web spec: port must be encoded as %3A
   const encoded = hostname.replace(':', '%3A');
   return `did:web:${encoded}`;

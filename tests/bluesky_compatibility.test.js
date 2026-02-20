@@ -11,6 +11,7 @@ import { cborDecode } from '@atproto/common';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runFullSetup } from '../src/setup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,19 +28,14 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
 
   beforeAll(async () => {
     process.env.PASSWORD = 'compat-pass';
+    process.env.DOMAIN = DOMAIN;
     const dbName = `compat-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
-    await initDb(testDb);
 
-    const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
-    const privKey = await keypair.export();
-    process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
-    process.env.DOMAIN = DOMAIN;
+    await runFullSetup({ db: testDb, skipPlc: true });
     userDid = formatDid(DOMAIN);
-    
-    await maybeInitRepo();
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(PORT, resolve));

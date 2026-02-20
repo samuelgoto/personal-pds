@@ -13,6 +13,7 @@ import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { runFullSetup } from '../src/setup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,19 +31,14 @@ describe('Relay Interaction & Protocol Compliance', () => {
 
   beforeAll(async () => {
     process.env.PASSWORD = 'relay-pass';
+    process.env.DOMAIN = HOST;
     const dbName = `relay-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
-    await initDb(testDb);
 
-    const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
-    const privKey = await keypair.export();
-    process.env.PRIVATE_KEY = Buffer.from(privKey).toString('hex');
-    process.env.DOMAIN = `localhost`;
-    userDid = formatDid(`localhost`);
-    
-    await maybeInitRepo();
+    await runFullSetup({ db: testDb, skipPlc: true });
+    userDid = formatDid(`localhost`); // Server strips port
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {

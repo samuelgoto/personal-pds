@@ -1,67 +1,34 @@
 import 'dotenv/config';
-import { db, initDb } from './src/db.js';
-import * as crypto from '@atproto/crypto';
-import { TursoStorage, loadRepo } from './src/repo.js';
-import { sequencer } from './src/sequencer.js';
-import { blocksToCarFile, WriteOpAction } from '@atproto/repo';
-import { formatDid } from './src/util.js';
+import readline from 'readline';
+import { runFullSetup } from './src/setup.js';
 
-async function setup() {
-  await initDb(db);
-  
-  const domain = process.env.DOMAIN || 'localhost:3000';
-  const did = formatDid(domain);
-  
-  const keypair = await crypto.Secp256k1Keypair.create({ exportable: true });
-  const privKey = await keypair.export();
-  const privKeyHex = Buffer.from(privKey).toString('hex');
-  
-  console.log(`\n--- PDS INITIALIZATION ---\n`);
-  console.log(`DID: ${did}`);
-  console.log(`PRIVATE_KEY=${privKeyHex}`);
-  console.log(`\nAdd the PRIVATE_KEY to your .env or Vercel environment variables.\n`);
-
-  console.log(`Initializing repository...`);
-  const storage = new TursoStorage();
-  
-  // Initial empty repo
-  let repo = await loadRepo(storage, did, keypair, null);
-  
-  // Create default profile
-  console.log(`Creating default profile...`);
-  repo = await repo.applyWrites([
-    {
-      action: WriteOpAction.Create,
-      collection: 'app.bsky.actor.profile',
-      rkey: 'self',
-      record: {
-        $type: 'app.bsky.actor.profile',
-        displayName: domain,
-        description: 'Personal PDS',
-        createdAt: new Date().toISOString(),
-      },
-    }
-  ], keypair);
-  
-  const recordCid = await repo.data.get('app.bsky.actor.profile/self');
-  const carBlocks = await storage.getRepoBlocks();
-  const blocks = await blocksToCarFile(repo.cid, carBlocks);
-
-  await sequencer.sequenceEvent({
-    type: 'commit',
-    did: did,
-    event: {
-      repo: did,
-      commit: repo.cid,
-      blocks: blocks,
-      rev: repo.commit.rev,
-      since: null,
-      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid || repo.cid }],
-      time: new Date().toISOString(),
-    }
+async function main() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
   });
-  
-  console.log('Setup complete! Repository root:', repo.cid.toString());
+
+  try {
+    const results = await runFullSetup({
+      interactive: true,
+      skipPlc: process.argv.includes('--skip-plc'),
+      rl
+    });
+
+    console.log(`\nSetup complete!`);
+    console.log(`DID: ${results.did}`);
+    console.log(`Root CID: ${results.rootCid}`);
+    
+    if (results.updatedEnv) {
+      console.log('Updated .env file with new configuration.');
+    }
+  } catch (err) {
+    console.error('\nSetup failed:');
+    console.error(err);
+    process.exit(1);
+  } finally {
+    rl.close();
+  }
 }
 
-setup().catch(console.error);
+main();
