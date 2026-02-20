@@ -1060,17 +1060,15 @@ app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   }
 });
 
-app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
-  res.status(426).send('Upgrade Required');
-});
-
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
-  const { did } = req.query;
+  const { did, since } = req.query;
   const pdsDid = (process.env.PDS_DID || '').trim();
   if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();
   if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
+
+  console.log(`TAP getRepo request for ${did} (since: ${since || 'start'})`);
 
   const storage = new TursoStorage();
   const blocks = await storage.getRepoBlocks();
