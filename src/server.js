@@ -266,7 +266,7 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   
   // If no handle provided, or it matches our domain, return our DID
   if (!handle || handle === user.handle || handle === 'self') {
-    return res.json({ did: user.did });
+    return res.json({ did: user.did.trim() });
   }
 
   return res.status(404).json({ error: 'HandleNotFound' });
