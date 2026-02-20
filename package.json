@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@atproto/api": "^0.18.21",
+    "dotenv": "^17.3.1",
     "jest": "^30.2.0",
     "nock": "^14.0.11"
   }
