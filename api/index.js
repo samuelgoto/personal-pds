@@ -66,16 +66,25 @@ app.use(async (req, res, next) => {
   }
 });
 
-// For local development
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-  initialize().then(() => {
-    const serverInst = http.createServer(app);
+// Start the server
+initialize().then(() => {
+  const serverInst = http.createServer(app);
 
-    serverInst.listen(PORT, () => {
-      console.log(`Minimal PDS listening on port ${PORT}`);
-    });
-  }).catch(console.error);
-}
+  // Handle WebSocket upgrades for the firehose
+  serverInst.on('upgrade', (request, socket, head) => {
+    if (request.url.startsWith('/xrpc/com.atproto.sync.subscribeRepos')) {
+      server.wss.handleUpgrade(request, socket, head, (ws) => {
+        server.wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  serverInst.listen(PORT, () => {
+    console.log(`Minimal PDS listening on port ${PORT}`);
+  });
+}).catch(console.error);
 
 // Export the app for Vercel
 export default app;

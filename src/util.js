@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { TID } from '@atproto/common';
+import { TID, cborEncode, cborDecode } from '@atproto/common';
 
 export function formatDid(hostname) {
   if (process.env.PDS_DID) {
@@ -31,3 +31,5 @@ export function getStaticAvatar() {
   }
   return null;
 }
+
+export { cborEncode, cborDecode };

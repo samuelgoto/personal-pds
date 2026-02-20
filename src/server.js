@@ -8,9 +8,48 @@ import { createHash } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
-import { formatDid, getStaticAvatar, createTid } from './util.js';
+import { cborEncode, cborDecode } from './util.js';
 
 const app = express();
+export const wss = new WebSocketServer({ noServer: true });
+
+// Simple in-memory set to track firehose subscribers
+const firehoseSubscribers = new Set();
+
+wss.on('connection', (ws) => {
+  console.log('New firehose subscriber connected');
+  firehoseSubscribers.add(ws);
+  ws.on('close', () => firehoseSubscribers.delete(ws));
+});
+
+export const broadcastRepoUpdate = async (did, rootCid, event) => {
+    const storage = new TursoStorage();
+    const blocks = await storage.getRepoBlocks();
+    const car = await blocksToCarFile(CID.parse(rootCid), blocks);
+    
+    const message = {
+        t: '#commit',
+        op: 1,
+        repo: did,
+        commit: rootCid,
+        blocks: Buffer.from(car),
+        rev: event.rev,
+        since: event.since || null,
+        ops: event.ops || [],
+        time: event.time || new Date().toISOString(),
+    };
+
+    const header = { t: '#commit', op: 1 };
+    const encodedHeader = cborEncode(header);
+    const encodedMessage = cborEncode(message);
+    const frame = Buffer.concat([encodedHeader, encodedMessage]);
+
+    firehoseSubscribers.forEach(ws => {
+        if (ws.readyState === 1) { // OPEN
+            ws.send(frame);
+        }
+    });
+};
 
 // 1. CORS middleware (Absolute top)
 app.use((req, res, next) => {
@@ -495,8 +534,8 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
     const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
 
     await sequencer.sequenceEvent({
-      type: 'commit',
       did: user.did,
+      type: 'commit',
       event: {
         repo: user.did,
         commit: updatedRepo.cid,
@@ -507,6 +546,13 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
         time: new Date().toISOString(),
       }
     });
+
+    // Broadcast to WebSocket firehose
+    broadcastRepoUpdate(user.did, updatedRepo.cid.toString(), {
+        rev: updatedRepo.commit.rev,
+        since: repoObj.commit.rev,
+        ops: ops,
+    }).catch(console.error);
 
     res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
   } catch (err) {
@@ -1077,10 +1123,13 @@ app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   }
 });
 
-// Aggressive 404 for subscribeRepos to force TAP fallback
-app.use('/xrpc/com.atproto.sync.subscribeRepos', (req, res) => {
-  res.setHeader('Connection', 'close');
-  res.status(404).json({ error: 'MethodNotImplemented', message: 'Firehose not supported, use TAP sync' });
+// WebSocket Firehose for subscribeRepos
+app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
+  // If this is a regular HTTP request, provide a helpful message
+  if (req.headers.upgrade !== 'websocket') {
+    return res.status(200).send('WebSocket firehose endpoint. Use a WebSocket client to subscribe.');
+  }
+  // WebSocket upgrades are handled at the server level (see api/index.js)
 });
 
 app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
