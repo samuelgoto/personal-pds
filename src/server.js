@@ -286,7 +286,7 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   const user = await getSingleUser(req);
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
 
-  // 1. First check if it's our own handle (strictly matching the domain)
+  // Only resolve locally if the handle EXACTLY matches our domain or is empty/self
   if (!handle || handle === user.handle || handle === 'self') {
     console.log(`[RESOLVE] Local handle resolved: ${handle || 'default'} -> ${user.did}`);
     return res.json({ did: user.did.trim() });
@@ -294,7 +294,7 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
 
   // 2. Otherwise, proxy the request to a public AppView to resolve other handles
   try {
-    console.log(`[RESOLVE] Proxying handle resolution for: ${handle}`);
+    console.log(`[RESOLVE] Proxying handle resolution to bsky.social for: ${handle}`);
     const appView = 'https://bsky.social';
     const response = await axios.get(`${appView}/xrpc/com.atproto.identity.resolveHandle?handle=${handle}`, {
         timeout: 5000,
@@ -302,7 +302,7 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
     });
 
     if (response.status === 200) {
-        console.log(`[RESOLVE] External handle resolved: ${handle} -> ${response.data.did}`);
+        console.log(`[RESOLVE] External handle resolved via bsky.social: ${handle} -> ${response.data.did}`);
         return res.json(response.data);
     }
   } catch (err) {
