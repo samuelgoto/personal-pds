@@ -51,10 +51,9 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
-  const host = getHost(req);
-  const pdsDid = `did:web:${host}`;
+  const pdsDid = (process.env.PDS_DID || '').trim();
   console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
-  res.json({ availableUserDomains: [host], did: pdsDid });
+  res.json({ availableUserDomains: [], did: pdsDid });
 });
 
 app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
@@ -133,11 +132,11 @@ const auth = (req, res, next) => {
 
 // --- Endpoints ---
 app.get('/.well-known/atproto-did', async (req, res) => {
-  const host = getHost(req);
+  const pdsDid = (process.env.PDS_DID || '').trim();
   res.setHeader('Content-Type', 'text/plain');
   res.setHeader('Cache-Control', 'no-cache');
   // Use res.write and res.end to ensure absolutely no extra formatting
-  res.write(formatDid(host));
+  res.write(pdsDid);
   res.end();
 });
 
@@ -229,7 +228,7 @@ app.get('/debug/ping-relay', async (req, res) => {
 
 // Helper to generate the DID document
 const getDidDoc = async (req, host) => {
-  const did = formatDid(host);
+  const pdsDid = (process.env.PDS_DID || formatDid(host)).trim();
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) return null;
 
@@ -243,20 +242,20 @@ const getDidDoc = async (req, host) => {
         "https://w3id.org/security/multiconf/v1",
         "https://w3id.org/security/suites/secp256k1-2019/v1"
     ],
-    "id": did,
+    "id": pdsDid,
     "alsoKnownAs": [`at://${host}`],
     "verificationMethod": [
       {
-        "id": `${did}#atproto`,
+        "id": `${pdsDid}#atproto`,
         "type": "Multikey",
-        "controller": did,
+        "controller": pdsDid,
         "publicKeyMultibase": keypair.did().split(':').pop()
       }
     ],
-    "authentication": [`${did}#atproto`],
-    "assertionMethod": [`${did}#atproto`],
-    "capabilityInvocation": [`${did}#atproto`],
-    "capabilityDelegation": [`${did}#atproto`],
+    "authentication": [`${pdsDid}#atproto`],
+    "assertionMethod": [`${pdsDid}#atproto`],
+    "capabilityInvocation": [`${pdsDid}#atproto`],
+    "capabilityDelegation": [`${pdsDid}#atproto`],
     "service": [{
       "id": "#atproto_pds",
       "type": "AtprotoPersonalDataServer",
@@ -268,8 +267,8 @@ const getDidDoc = async (req, host) => {
 app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
   try {
     const { did } = req.query;
-    const user = await getSingleUser(req);
-    if (!user || did !== user.did) return res.status(404).json({ error: 'DidNotFound' });
+    const pdsDid = (process.env.PDS_DID || '').trim();
+    if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) return res.status(404).json({ error: 'DidNotFound' });
 
     const host = getHost(req);
     const doc = await getDidDoc(req, host);
@@ -279,6 +278,7 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
   }
+});
 });
 
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
