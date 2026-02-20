@@ -279,7 +279,6 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
     res.status(500).json({ error: 'InternalServerError' });
   }
 });
-});
 
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   res.set('Cache-Control', 'no-store');
