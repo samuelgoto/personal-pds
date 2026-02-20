@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
 import { initDb, db } from '../src/db.js';
