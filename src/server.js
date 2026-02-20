@@ -861,18 +861,27 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
     // Find replies in the repository
     const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
     const directReplies = [];
+    console.log(`[THREAD] Searching for replies to: ${canonicalUri} (from original: ${uri})`);
+    
     for (const entry of allPostEntries) {
         if (!entry.k) continue; // Safety check
         const postRkey = entry.k.split('/').pop();
         if (postRkey === rkey) continue; // Skip the anchor post itself
         
         const postRecord = await repoObj.getRecord('app.bsky.feed.post', postRkey);
-        if (postRecord?.reply?.parent?.uri === canonicalUri) {
-            directReplies.push({
-                uri: `at://${user.did}/app.bsky.feed.post/${postRkey}`,
-                cid: entry.v.toString(),
-                record: postRecord
-            });
+        const parentUri = postRecord?.reply?.parent?.uri;
+        
+        if (parentUri) {
+            // Canonicalize the parent URI from the record for comparison
+            const canonicalParentUri = parentUri.replace(`at://${user.handle}`, `at://${user.did}`);
+            if (canonicalParentUri === canonicalUri) {
+                console.log(`[THREAD] Found direct reply: ${postRkey}`);
+                directReplies.push({
+                    uri: `at://${user.did}/app.bsky.feed.post/${postRkey}`,
+                    cid: entry.v.toString(),
+                    record: postRecord
+                });
+            }
         }
     }
 
