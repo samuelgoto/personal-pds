@@ -1123,6 +1123,35 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   }
 });
 
+app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
+  try {
+    const { did } = req.query;
+    const pdsDid = (process.env.PDS_DID || '').trim();
+    if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) {
+      return res.status(404).json({ error: 'RepoNotFound' });
+    }
+
+    const result = await db.execute({
+      sql: 'SELECT event FROM sequencer WHERE type = "commit" ORDER BY seq DESC LIMIT 1',
+    });
+
+    let rev = '';
+    if (result.rows.length > 0) {
+      const event = cborDecode(new Uint8Array(result.rows[0].event));
+      rev = event.rev || '';
+    }
+
+    res.json({
+      did: pdsDid,
+      active: true,
+      status: 'active',
+      rev: rev
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   try {
     const pdsDid = (process.env.PDS_DID || '').trim();
