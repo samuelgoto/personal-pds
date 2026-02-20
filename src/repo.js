@@ -6,7 +6,7 @@ import { cborDecode } from '@atproto/common';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
-import { formatDid, getStaticAvatar } from './util.js';
+import { formatDid, getStaticAvatar, createBlobCid } from './util.js';
 
 export class TursoStorage extends ReadableBlockstore {
   blocks = new BlockMap();
