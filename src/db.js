@@ -39,6 +39,29 @@ export async function initDb(client) {
     `CREATE TABLE IF NOT EXISTS system_state (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_codes (
+      code TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      redirect_uri TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      did TEXT NOT NULL,
+      dpop_jwk TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+      token TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      did TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      dpop_jwk TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS oauth_par_requests (
+      request_uri TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL,
+      request_data TEXT NOT NULL,
+      expires_at INTEGER NOT NULL
     )`
   ], "write");
 }
