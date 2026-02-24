@@ -333,6 +333,7 @@ const getSingleUser = async (req) => {
 };
 
 const auth = async (req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     console.log(`Auth failed: No Authorization header for ${req.url}`);
@@ -678,6 +679,24 @@ app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
       email: 'pds@example.com',
       emailConfirmed: true,
       birthDate: birthDate,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
+  try {
+    const user = await getSingleUser(req);
+    res.json({
+      activated: true,
+      validEmail: true,
+      repoCommit: await getRootCid(),
+      repoRev: '0',
+      repoBlocks: 1,
+      indexedIncremental: true,
+      expectedBlobs: 0,
+      importedBlobs: 0
     });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
