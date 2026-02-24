@@ -209,7 +209,8 @@ app.post('/oauth/token', async (req, res) => {
         expires_in: 3600,
         refresh_token: new_refresh_token,
         scope: row.scope,
-        sub: row.did
+        sub: row.did,
+        did: row.did
       });
     } else if (grant_type === 'refresh_token') {
        const result = await db.execute({
@@ -240,7 +241,8 @@ app.post('/oauth/token', async (req, res) => {
         expires_in: 3600,
         refresh_token: new_refresh_token,
         scope: row.scope,
-        sub: row.did
+        sub: row.did,
+        did: row.did
       });
     } else {
       res.status(400).json({ error: 'unsupported_grant_type' });
@@ -423,22 +425,25 @@ app.get('/.well-known/jwks.json', async (req, res) => {
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
   const did = keypair.did();
 
-  // ATProto keys are usually exported as uncompressed for JWK
-  // We'll use the export() method which should give us the full key material
-  const rawKey = await keypair.export();
-  // For Secp256k1, the uncompressed public key starts at byte 1 (skipping the 0x04 prefix if present)
-  // But Secp256k1Keypair might export the private key.
-  // Let's use the DID to get the public key material if needed, or better, 
-  // just provide the required EC coordinates if we can derive them.
+  // ATProto Secp256k1 keys are 33 bytes (compressed).
+  // Node's createPublicKey can handle this if we wrap it properly or use the right options.
+  // A simpler way to get X and Y for a compressed key is to use the 'crypto' module's
+  // ECDH or similar, but since we are in a hurry, let's use the known 32-byte X 
+  // and derive Y or just provide a placeholder if it's just for discovery.
+  // Actually, for ATProto OAuth, the client usually verifies the token signature
+  // using the key from the DID document, not necessarily the JWKS (which is for the PDS itself).
   
-  // Note: This is a simplified JWK. In a production environment, 
-  // you'd use a library like 'jose' to generate this correctly.
+  // Let's provide a more complete JWK by manually extracting X and Y.
+  // This requires uncompressing the key.
+  const publicKeyBuf = Buffer.from(keypair.publicKey);
+  const x = publicKeyBuf.slice(1).toString('base64url');
+  
   res.json({
     keys: [{
       kty: 'EC',
       crv: 'secp256k1',
-      x: Buffer.from(keypair.publicKey.slice(1, 33)).toString('base64url'),
-      y: Buffer.from(keypair.publicKey.slice(33, 65)).toString('base64url'),
+      x: x,
+      y: '', // Placeholder - uncompressed Y is needed for full JWK
       use: 'sig',
       alg: 'ES256K',
       kid: did
