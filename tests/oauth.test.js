@@ -339,6 +339,27 @@ describe('ATProto OAuth Implementation Tests', () => {
       expect(decodedId.aud).toBe(my_client_id);
       expect(decodedId.iss).toBe(HOST);
     });
+
+    test('checkAccountStatus returns valid JSON and correct status', async () => {
+      // This is a public endpoint used by many clients during login flow
+      const res = await axios.get(`${HOST}/xrpc/com.atproto.server.checkAccountStatus`);
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/json');
+      expect(res.data.activated).toBe(true);
+      expect(res.data.repoCommit).toBeDefined();
+    });
+
+    test('auth failure returns JSON error (not HTML)', async () => {
+      // Attempt to access a protected route without a token
+      const res = await axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {
+        validateStatus: s => s === 401
+      });
+      
+      expect(res.status).toBe(401);
+      // Nuance: Verify the response is JSON, which avoids "invalid character '<'" errors in clients
+      expect(res.headers['content-type']).toContain('application/json');
+      expect(res.data.error).toBe('AuthenticationRequired');
+    });
   });
 
   describe('DPoP Nuances', () => {
