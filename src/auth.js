@@ -23,6 +23,7 @@ export function createAccessToken(did, handle, jkt, issuer, client_id) {
 export async function createIdToken(did, handle, client_id, issuer) {
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) throw new Error('No PDS private key');
+  if (!client_id) throw new Error('client_id is required for id_token');
 
   const payload = {
     iss: issuer,

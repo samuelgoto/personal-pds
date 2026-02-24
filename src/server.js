@@ -198,6 +198,7 @@ app.post('/oauth/token', async (req, res) => {
         }
       }
 
+      console.log(`Generating tokens for client_id: ${client_id}, issuer: ${issuer}`);
       const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id);
       const new_refresh_token = randomBytes(32).toString('hex');
 
@@ -239,6 +240,7 @@ app.post('/oauth/token', async (req, res) => {
         return res.status(400).json({ error: 'invalid_dpop_key' });
       }
 
+      console.log(`Generating tokens for client_id: ${client_id}, issuer: ${issuer}`);
       const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id);
       const new_refresh_token = randomBytes(32).toString('hex');
 
