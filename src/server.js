@@ -919,15 +919,18 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
+    if (!profile) {
+        return res.status(404).json({ error: 'ProfileNotFound' });
+    }
     const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     
     res.json({
         did: user.did,
         handle: user.handle,
-        displayName: profile?.displayName || user.handle,
-        description: profile?.description || '',
-        avatar: profile?.avatar,
-        banner: profile?.banner,
+        displayName: profile.displayName || user.handle,
+        description: profile.description || '',
+        avatar: profile.avatar,
+        banner: profile.banner,
         associated: {
             activitySubscription: { allowSubscriptions: 'followers' }
         },
@@ -955,30 +958,33 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
         const storage = new TursoStorage();
         const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
         const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
-        const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
+        
+        if (profile) {
+            const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
 
-        const localProfile = {
-            did: user.did,
-            handle: user.handle,
-            displayName: profile?.displayName || user.handle,
-            description: profile?.description || '',
-            avatar: profile?.avatar,
-            banner: profile?.banner,
-            associated: {
-                activitySubscription: { allowSubscriptions: 'followers' }
-            },
-            viewer: {
-                muted: false,
-                blockedBy: false,
-            },
-            labels: [],
-            createdAt: repoCreatedAt,
-            indexedAt: new Date().toISOString(),
-        };
+            const localProfile = {
+                did: user.did,
+                handle: user.handle,
+                displayName: profile.displayName || user.handle,
+                description: profile.description || '',
+                avatar: profile.avatar,
+                banner: profile.banner,
+                associated: {
+                    activitySubscription: { allowSubscriptions: 'followers' }
+                },
+                viewer: {
+                    muted: false,
+                    blockedBy: false,
+                },
+                labels: [],
+                createdAt: repoCreatedAt,
+                indexedAt: new Date().toISOString(),
+            };
 
-        for (const actor of actors) {
-            if (actor === user.did || actor === user.handle) {
-                profiles.push(localProfile);
+            for (const actor of actors) {
+                if (actor === user.did || actor === user.handle) {
+                    profiles.push(localProfile);
+                }
             }
         }
     }
