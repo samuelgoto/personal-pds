@@ -673,12 +673,13 @@ app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
     const user = await getSingleUser(req);
     if (!user) return res.status(404).json({ error: 'UserNotFound' });
     
-    const birthDate = await getSystemMeta(`birthDate:${user.did}`) || '1990-01-01';
+    const birthDate = await getSystemMeta(`birthDate:${user.did}`) || process.env.BIRTHDATE || '1990-01-01';
+    const email = process.env.EMAIL || `pds@${user.handle}`;
 
     res.json({
       handle: user.handle,
       did: user.did,
-      email: 'pds@example.com',
+      email: email,
       emailConfirmed: true,
       birthDate: birthDate,
     });
