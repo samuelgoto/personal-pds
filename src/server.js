@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from './db.js';
-import { createToken, verifyToken, createAccessToken, validateDpop, getJkt } from './auth.js';
+import { createToken, verifyToken, createAccessToken, createIdToken, validateDpop, getJkt } from './auth.js';
 import { TursoStorage, getRootCid } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
@@ -209,7 +209,7 @@ app.post('/oauth/token', async (req, res) => {
       // Cleanup code
       await db.execute({ sql: 'DELETE FROM oauth_codes WHERE code = ?', args: [code] });
 
-      res.json({
+      const response = {
         access_token,
         token_type: 'DPoP',
         expires_in: 3600,
@@ -217,7 +217,13 @@ app.post('/oauth/token', async (req, res) => {
         scope: row.scope,
         sub: row.did,
         did: row.did
-      });
+      };
+
+      if (row.scope.includes('openid')) {
+        response.id_token = createIdToken(row.did, user.handle, client_id, issuer);
+      }
+
+      res.json(response);
     } else if (grant_type === 'refresh_token') {
        const result = await db.execute({
         sql: 'SELECT * FROM oauth_refresh_tokens WHERE token = ? AND client_id = ? AND expires_at > ?',
@@ -241,7 +247,7 @@ app.post('/oauth/token', async (req, res) => {
         args: [new_refresh_token, Math.floor(Date.now() / 1000) + 30 * 24 * 3600, refresh_token]
       });
 
-      res.json({
+      const response = {
         access_token,
         token_type: 'DPoP',
         expires_in: 3600,
@@ -249,7 +255,13 @@ app.post('/oauth/token', async (req, res) => {
         scope: row.scope,
         sub: row.did,
         did: row.did
-      });
+      };
+
+      if (row.scope.includes('openid')) {
+        response.id_token = createIdToken(row.did, user.handle, client_id, issuer);
+      }
+
+      res.json(response);
     } else {
       res.status(400).json({ error: 'unsupported_grant_type' });
     }
@@ -432,24 +444,18 @@ app.get('/.well-known/jwks.json', async (req, res) => {
   const did = keypair.did();
 
   // ATProto Secp256k1 keys are 33 bytes (compressed).
-  // Node's createPublicKey can handle this if we wrap it properly or use the right options.
-  // A simpler way to get X and Y for a compressed key is to use the 'crypto' module's
-  // ECDH or similar, but since we are in a hurry, let's use the known 32-byte X 
-  // and derive Y or just provide a placeholder if it's just for discovery.
-  // Actually, for ATProto OAuth, the client usually verifies the token signature
-  // using the key from the DID document, not necessarily the JWKS (which is for the PDS itself).
-  
-  // Let's provide a more complete JWK by manually extracting X and Y.
-  // This requires uncompressing the key.
-  const publicKeyBuf = Buffer.from(keypair.publicKey);
-  const x = publicKeyBuf.slice(1).toString('base64url');
-  
+  // We need to derive the uncompressed coordinates for a standard JWK.
+  // We can use createPublicKey to get the uncompressed key.
+  const publicKey = createPublicKey({
+    key: Buffer.concat([Buffer.from([0x30, 0x56, 0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a, 0x03, 0x42, 0x00]), Buffer.from(keypair.publicKey)]),
+    format: 'der',
+    type: 'spki'
+  });
+  const jwk = publicKey.export({ format: 'jwk' });
+
   res.json({
     keys: [{
-      kty: 'EC',
-      crv: 'secp256k1',
-      x: x,
-      y: '', // Placeholder - uncompressed Y is needed for full JWK
+      ...jwk,
       use: 'sig',
       alg: 'ES256K',
       kid: did
