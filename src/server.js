@@ -688,6 +688,9 @@ app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
 app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
   try {
     const user = await getSingleUser(req);
+    if (!user) {
+      return res.status(404).json({ error: 'UserNotFound', message: 'User or Repository not initialized' });
+    }
     res.json({
       activated: true,
       validEmail: true,
