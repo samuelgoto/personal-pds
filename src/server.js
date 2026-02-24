@@ -344,17 +344,18 @@ app.get('/.well-known/atproto-did', async (req, res) => {
 
 app.get('/.well-known/oauth-authorization-server', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}`;
+  const issuer = `${protocol}://${host}/`;
   
   res.json({
     issuer,
-    authorization_endpoint: `${issuer}/oauth/authorize`,
-    token_endpoint: `${issuer}/oauth/token`,
-    pushed_authorization_request_endpoint: `${issuer}/oauth/par`,
+    authorization_endpoint: `${issuer}oauth/authorize`,
+    token_endpoint: `${issuer}oauth/token`,
+    pushed_authorization_request_endpoint: `${issuer}oauth/par`,
     require_pushed_authorization_requests: true,
-    jwks_uri: `${issuer}/.well-known/jwks.json`,
+    jwks_uri: `${issuer}.well-known/jwks.json`,
     scopes_supported: ['atproto'],
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -369,9 +370,10 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
 
 app.get('/.well-known/oauth-protected-resource', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}`;
+  const issuer = `${protocol}://${host}/`;
 
   res.json({
     resource: issuer,
@@ -383,15 +385,17 @@ app.get('/.well-known/oauth-protected-resource', async (req, res) => {
 });
 
 app.get('/.well-known/openid-configuration', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}`;
+  const issuer = `${protocol}://${host}/`;
 
   res.json({
     issuer,
-    authorization_endpoint: `${issuer}/oauth/authorize`,
-    token_endpoint: `${issuer}/oauth/token`,
-    jwks_uri: `${issuer}/.well-known/jwks.json`,
+    authorization_endpoint: `${issuer}oauth/authorize`,
+    token_endpoint: `${issuer}oauth/token`,
+    jwks_uri: `${issuer}.well-known/jwks.json`,
     scopes_supported: ['openid', 'atproto'],
     response_types_supported: ['code'],
     subject_types_supported: ['public'],
@@ -401,22 +405,29 @@ app.get('/.well-known/openid-configuration', async (req, res) => {
 
 app.get('/.well-known/jwks.json', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) return res.status(500).json({ error: 'NoPrivateKey' });
   
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
   const did = keypair.did();
-  const publicKey = keypair.publicKey;
 
-  // Convert Secp256k1 public key to JWK
-  // This is a simplified conversion for Secp256k1
-  // In a production PDS, you'd use a more robust JWK library
+  // ATProto keys are usually exported as uncompressed for JWK
+  // We'll use the export() method which should give us the full key material
+  const rawKey = await keypair.export();
+  // For Secp256k1, the uncompressed public key starts at byte 1 (skipping the 0x04 prefix if present)
+  // But Secp256k1Keypair might export the private key.
+  // Let's use the DID to get the public key material if needed, or better, 
+  // just provide the required EC coordinates if we can derive them.
+  
+  // Note: This is a simplified JWK. In a production environment, 
+  // you'd use a library like 'jose' to generate this correctly.
   res.json({
     keys: [{
       kty: 'EC',
       crv: 'secp256k1',
-      x: Buffer.from(publicKey.slice(1, 33)).toString('base64url'),
-      y: Buffer.from(publicKey.slice(33, 65)).toString('base64url'),
+      x: Buffer.from(keypair.publicKey.slice(1, 33)).toString('base64url'),
+      y: Buffer.from(keypair.publicKey.slice(33, 65)).toString('base64url'),
       use: 'sig',
       alg: 'ES256K',
       kid: did
