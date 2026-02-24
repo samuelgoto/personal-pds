@@ -362,7 +362,8 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     dpop_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     code_challenge_methods_supported: ['S256'],
-    authorization_response_iss_parameter_supported: true
+    authorization_response_iss_parameter_supported: true,
+    protected_resources: [issuer]
   });
 });
 
@@ -374,7 +375,7 @@ app.get('/.well-known/oauth-protected-resource', async (req, res) => {
 
   res.json({
     resource: issuer,
-    authorization_servers: [issuer, `${issuer}/`],
+    authorization_servers: [issuer],
     scopes_supported: ['atproto'],
     bearer_methods_supported: ['authorization_header'],
     resource_documentation: 'https://atproto.com/specs/oauth'
