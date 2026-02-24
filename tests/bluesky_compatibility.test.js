@@ -108,7 +108,7 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     const res = await axios.get(`${HOST}/xrpc/com.atproto.identity.resolveDid?did=${userDid}`);
     expect(res.status).toBe(200);
     expect(res.data.id).toBe(userDid);
-    expect(res.data.verificationMethod[0].id).toBe('#atproto');
+    expect(res.data.verificationMethod[0].id).toBe(`${userDid}#atproto`);
   });
 
   test('getAccount should return birthDate', async () => {
@@ -397,7 +397,9 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     // 2. Fetch via getPostThreadV2
     const res = await axios.get(`${HOST}/xrpc/app.bsky.unspecced.getPostThreadV2?anchor=${encodeURIComponent(uri)}`);
     expect(res.status).toBe(200);
-    expect(res.data.thread.post.uri).toBe(uri);
+    // V2 thread is a list of items
+    const rootItem = res.data.thread.find(item => item.uri === uri);
+    expect(rootItem.value.post.uri).toBe(uri);
   });
 
   test('getTimeline should return a valid feed', async () => {
@@ -450,7 +452,8 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     // 2. Fetch via getPostThreadV2 using handle
     const res = await axios.get(`${HOST}/xrpc/app.bsky.unspecced.getPostThreadV2?anchor=${encodeURIComponent(handleUri)}`);
     expect(res.status).toBe(200);
-    expect(res.data.thread.post.record.text).toBe('Handle URI test');
+    const rootItem = res.data.thread.find(item => item.uri.includes(userDid));
+    expect(rootItem.value.post.record.text).toBe('Handle URI test');
   });
 
   test('listRepos should return the local user repo', async () => {

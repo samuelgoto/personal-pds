@@ -52,6 +52,12 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
+  const pdsDid = (process.env.PDS_DID || '').trim();
+  console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
+  res.json({ availableUserDomains: [], did: pdsDid });
+});
+
 const validateClient = async (client_id, redirect_uri) => {
   try {
     const res = await axios.get(client_id);
@@ -1742,6 +1748,22 @@ app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
   }
+});
+
+app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
+  const { did, since } = req.query;
+  const pdsDid = (process.env.PDS_DID || '').trim();
+  if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+  
+  const rootCid = await getRootCid();
+  if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
+
+  const storage = new TursoStorage();
+  const blocks = await storage.getRepoBlocks();
+  const car = await blocksToCarFile(CID.parse(rootCid), blocks);
+
+  res.setHeader('Content-Type', 'application/vnd.ipld.car');
+  res.send(Buffer.from(car));
 });
 
 app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
