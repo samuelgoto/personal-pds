@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { TID, cborEncode, cborDecode } from '@atproto/common';
+import { TID } from '@atproto/common';
+import { encode as cborEncode, decode as cborDecode } from 'cborg';
 import { CID } from 'multiformats/cid';
 import * as sha256 from 'multiformats/hashes/sha2';
 
@@ -19,6 +20,19 @@ export function createTid() {
 export async function createBlobCid(content) {
   const hash = await sha256.sha256.digest(content);
   return CID.createV1(0x55, hash).toString(); // 0x55 is raw codec (typical for blobs)
+}
+
+export function cidToString(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(cidToString);
+  if (obj.asCID === obj || obj._Symbol_for_multiformats_cid) {
+    return obj.toString();
+  }
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = cidToString(v);
+  }
+  return out;
 }
 
 /**

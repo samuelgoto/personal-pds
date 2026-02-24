@@ -1,6 +1,7 @@
 import { db } from './db.js';
-import { cborEncode, cborDecode } from '@atproto/common';
+import * as cborg from 'cborg';
 import { WebSocket } from 'ws';
+import { cidToString } from './util.js';
 
 class Sequencer {
   clients = new Set();
@@ -52,9 +53,9 @@ class Sequencer {
     
     const seq = res.rows[0].seq;
     
-    // 2. Encode the FULL event including the seq
-    const eventWithSeq = { ...evt.event, seq };
-    const encoded = Buffer.from(cborEncode(eventWithSeq));
+    // 2. Encode the FULL event including the seq using DAG-CBOR (canonical)
+    const eventWithSeq = cidToString({ ...evt.event, seq });
+    const encoded = Buffer.from(cborg.encode(eventWithSeq));
 
     // 3. Update the database with the real encoded event
     await db.execute({
@@ -85,7 +86,7 @@ class Sequencer {
 
   formatEvent(row) {
     const header = { op: 1, t: `#${row.type}` };
-    const encodedHeader = cborEncode(header);
+    const encodedHeader = cborg.encode(header);
     console.log(`[SEQUENCER] Formatting event: type=${row.type}, header_len=${encodedHeader.length}, body_len=${row.event.length}`);
     return Buffer.concat([
         Buffer.from(encodedHeader),

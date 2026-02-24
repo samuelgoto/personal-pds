@@ -1,8 +1,9 @@
 import fs from 'fs';
 import { createHash } from 'crypto';
 import * as crypto from '@atproto/crypto';
-import { cborEncode } from '@atproto/common';
-import axios from 'axios';
+import * as cborg from 'cborg';
+import { db } from './db.js';
+
 import { WebSocket } from 'ws';
 import dns from 'dns/promises';
 import { Resolver } from 'dns/promises';

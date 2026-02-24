@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { cborDecode } from '@atproto/common';
+import * as cborg from 'cborg';
 
 const PDS_URL = process.argv[2] || 'wss://pds.sgo.to';
 const wsUrl = `${PDS_URL}/xrpc/com.atproto.sync.subscribeRepos`;
@@ -28,7 +28,7 @@ ws.on('message', (data) => {
     
     // For now, let's just log that we got data and try a basic decode
     try {
-        const decoded = cborDecode(data);
+        const decoded = cborg.decode(data);
         console.log('Decoded Body:', JSON.stringify(decoded, (key, value) => 
             value instanceof Uint8Array ? `[Uint8Array ${value.length}]` : value
         , 2));

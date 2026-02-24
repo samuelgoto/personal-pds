@@ -2,7 +2,7 @@ import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile, WriteOpAction } fr
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
-import { cborDecode } from '@atproto/common';
+import * as cborg from 'cborg';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
@@ -101,7 +101,7 @@ export const getRootCid = async () => {
       sql: "SELECT event FROM sequencer WHERE type = 'commit' ORDER BY seq DESC LIMIT 1"
     });
     if (res.rows.length === 0) return null;
-    const event = cborDecode(new Uint8Array(res.rows[0].event));
+    const event = cborg.decode(new Uint8Array(res.rows[0].event));
     return event.commit.toString();
   } catch (e) {
     return null; 
