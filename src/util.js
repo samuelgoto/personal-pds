@@ -1,29 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { TID } from '@atproto/common';
-import * as cborg from 'cborg';
+import { TID, cborEncode, cborDecode } from '@atproto/common';
 import { CID } from 'multiformats/cid';
-
-export function cborEncode(obj) {
-  return cborg.encode(obj);
-}
-
-export function cborDecode(bytes) {
-  return cborg.decode(bytes, {
-    tags: {
-      42: (value) => {
-        if (value instanceof Uint8Array) {
-          // ATProto CID tag 42 usually has a leading 0x00 byte
-          const cidBytes = value[0] === 0 ? value.subarray(1) : value;
-          return CID.decode(cidBytes);
-        }
-        return value;
-      }
-    }
-  });
-}
 import * as sha256 from 'multiformats/hashes/sha2';
+
+export { cborEncode, cborDecode };
 
 export function formatDid(hostname) {
   if (process.env.PDS_DID) {
@@ -39,19 +21,6 @@ export function createTid() {
 export async function createBlobCid(content) {
   const hash = await sha256.sha256.digest(content);
   return CID.createV1(0x55, hash).toString(); // 0x55 is raw codec (typical for blobs)
-}
-
-export function cidToString(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(cidToString);
-  if (obj.asCID === obj || obj._Symbol_for_multiformats_cid) {
-    return obj.toString();
-  }
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) {
-    out[k] = cidToString(v);
-  }
-  return out;
 }
 
 /**

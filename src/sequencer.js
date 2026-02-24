@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { WebSocket } from 'ws';
-import { cidToString, cborEncode, cborDecode } from './util.js';
+import { cborEncode, cborDecode } from './util.js';
 
 class Sequencer {
   clients = new Set();
@@ -53,7 +53,7 @@ class Sequencer {
     const seq = res.rows[0].seq;
     
     // 2. Encode the FULL event including the seq using DAG-CBOR (canonical)
-    const eventWithSeq = cidToString({ ...evt.event, seq });
+    const eventWithSeq = { ...evt.event, seq };
     const encoded = Buffer.from(cborEncode(eventWithSeq));
 
     // 3. Update the database with the real encoded event
