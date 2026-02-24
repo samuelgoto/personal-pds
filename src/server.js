@@ -347,17 +347,18 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}/`;
+  const issuer = `${protocol}://${host}`;
   
   res.json({
     issuer,
-    authorization_endpoint: `${issuer}oauth/authorize`,
-    token_endpoint: `${issuer}oauth/token`,
-    pushed_authorization_request_endpoint: `${issuer}oauth/par`,
+    authorization_endpoint: `${issuer}/oauth/authorize`,
+    token_endpoint: `${issuer}/oauth/token`,
+    pushed_authorization_request_endpoint: `${issuer}/oauth/par`,
     require_pushed_authorization_requests: true,
-    jwks_uri: `${issuer}.well-known/jwks.json`,
+    jwks_uri: `${issuer}/.well-known/jwks.json`,
     scopes_supported: ['atproto'],
     response_types_supported: ['code'],
+    response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
@@ -373,7 +374,7 @@ app.get('/.well-known/oauth-protected-resource', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}/`;
+  const issuer = `${protocol}://${host}`;
 
   res.json({
     resource: issuer,
@@ -389,13 +390,13 @@ app.get('/.well-known/openid-configuration', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}/`;
+  const issuer = `${protocol}://${host}`;
 
   res.json({
     issuer,
-    authorization_endpoint: `${issuer}oauth/authorize`,
-    token_endpoint: `${issuer}oauth/token`,
-    jwks_uri: `${issuer}.well-known/jwks.json`,
+    authorization_endpoint: `${issuer}/oauth/authorize`,
+    token_endpoint: `${issuer}/oauth/token`,
+    jwks_uri: `${issuer}/.well-known/jwks.json`,
     scopes_supported: ['openid', 'atproto'],
     response_types_supported: ['code'],
     subject_types_supported: ['public'],
