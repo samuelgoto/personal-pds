@@ -374,7 +374,7 @@ app.get('/.well-known/oauth-protected-resource', async (req, res) => {
 
   res.json({
     resource: issuer,
-    authorization_servers: [issuer],
+    authorization_servers: [issuer, `${issuer}/`],
     scopes_supported: ['atproto'],
     bearer_methods_supported: ['authorization_header'],
     resource_documentation: 'https://atproto.com/specs/oauth'
@@ -399,19 +399,27 @@ app.get('/.well-known/openid-configuration', async (req, res) => {
 });
 
 app.get('/.well-known/jwks.json', async (req, res) => {
-  // Return a static JWK for our JWT_SECRET (this is a bit of a hack, 
-  // normally you'd use a real public/private key pair)
-  // For now, let's use the signing key from PDS
+  res.setHeader('Cache-Control', 'no-store');
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) return res.status(500).json({ error: 'NoPrivateKey' });
+  
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
   const did = keypair.did();
-  const multibaseKey = did.split(':').pop();
-  
-  // Minimal JWK for Secp256k1
-  // In a real impl, you'd convert the raw key to JWK format
+  const publicKey = keypair.publicKey;
+
+  // Convert Secp256k1 public key to JWK
+  // This is a simplified conversion for Secp256k1
+  // In a production PDS, you'd use a more robust JWK library
   res.json({
-    keys: [] // Placeholder: Standard ATProto OAuth often uses "none" or client-side validation
+    keys: [{
+      kty: 'EC',
+      crv: 'secp256k1',
+      x: Buffer.from(publicKey.slice(1, 33)).toString('base64url'),
+      y: Buffer.from(publicKey.slice(33, 65)).toString('base64url'),
+      use: 'sig',
+      alg: 'ES256K',
+      kid: did
+    }]
   });
 });
 
