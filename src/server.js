@@ -97,7 +97,7 @@ app.get('/oauth/authorize', async (req, res) => {
     }
   }
 
-  const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = query;
+  const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode } = query;
   
   // Validate client metadata if possible
   if (client_id.startsWith('http')) {
@@ -116,6 +116,8 @@ app.get('/oauth/authorize', async (req, res) => {
           <input type="hidden" name="scope" value="${scope}">
           <input type="hidden" name="state" value="${state}">
           <input type="hidden" name="code_challenge" value="${code_challenge}">
+          <input type="hidden" name="code_challenge_method" value="${code_challenge_method || ''}">
+          <input type="hidden" name="response_mode" value="${response_mode || ''}">
           <input type="password" name="password" placeholder="Your PDS Password" required>
           <button type="submit">Approve</button>
         </form>
@@ -125,7 +127,7 @@ app.get('/oauth/authorize', async (req, res) => {
 });
 
 app.post('/oauth/authorize', async (req, res) => {
-  const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, password } = req.body;
+  const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode, password } = req.body;
   const user = await getSingleUser(req);
 
   if (password !== user.password) {
@@ -141,13 +143,19 @@ app.post('/oauth/authorize', async (req, res) => {
   });
 
   const url = new URL(redirect_uri);
-  url.searchParams.set('code', code);
-  if (state) url.searchParams.set('state', state);
+  const params = new URLSearchParams();
+  params.set('code', code);
+  if (state) params.set('state', state);
   
-  // Add 'iss' parameter as required by RFC 9207
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  url.searchParams.set('iss', `${protocol}://${host}`);
+  params.set('iss', `${protocol}://${host}`);
+
+  if (response_mode === 'fragment') {
+    url.hash = params.toString();
+  } else {
+    params.forEach((v, k) => url.searchParams.set(k, v));
+  }
   
   res.redirect(url.toString());
 });
