@@ -357,6 +357,20 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
   });
 });
 
+app.get('/.well-known/oauth-protected-resource', async (req, res) => {
+  const host = getHost(req);
+  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
+  const issuer = `${protocol}://${host}`;
+
+  res.json({
+    resource: issuer,
+    authorization_servers: [issuer],
+    scopes_supported: ['atproto'],
+    bearer_methods_supported: ['authorization_header'],
+    resource_documentation: 'https://atproto.com/specs/oauth'
+  });
+});
+
 app.get('/.well-known/openid-configuration', async (req, res) => {
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
