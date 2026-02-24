@@ -287,8 +287,7 @@ const getSystemMeta = async (key) => {
 
 // Helper to get the current host safely
 export const getHost = (req) => {
-  if (process.env.DOMAIN) return process.env.DOMAIN;
-  return (req.headers['x-forwarded-host'] || req.get('host') || 'localhost').split(':')[0];
+  return process.env.DOMAIN || req.get('host') || 'localhost';
 };
 
 // Helper to get the single allowed user from Env
@@ -297,6 +296,7 @@ const getSingleUser = async (req) => {
   const handle = domain === 'localhost' ? 'localhost.test' : domain;
   
   const did = (process.env.PDS_DID || formatDid(domain)).trim();
+
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
   

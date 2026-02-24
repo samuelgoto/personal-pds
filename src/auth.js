@@ -72,8 +72,10 @@ export async function validateDpop(req, access_token = null) {
   }
 
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const fullUrl = `${protocol}://${req.get('host')}${req.originalUrl || req.url}`;
-  const expectedHtu = fullUrl.split('?')[0];
+  const host = req.get('host');
+  const path = (req.originalUrl || req.url).split('?')[0];
+  const expectedHtu = `${protocol}://${host}${path}`;
+  
   if (htu !== expectedHtu) {
     // Be lenient with trailing slashes
     const normalizedHtu = htu.endsWith('/') ? htu.slice(0, -1) : htu;
@@ -82,6 +84,7 @@ export async function validateDpop(req, access_token = null) {
       throw new Error(`DPoP htu mismatch: expected ${expectedHtu}, got ${htu}`);
     }
   }
+
 
   // If access_token is provided, verify it's bound to this jkt
   if (access_token) {
