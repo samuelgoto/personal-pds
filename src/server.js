@@ -50,6 +50,7 @@ app.use((req, res, next) => {
 
 // 3. JSON parser
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const validateClient = async (client_id, redirect_uri) => {
   try {
