@@ -295,35 +295,7 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     expect(lastEvent.ops[0].cid.toString()).not.toBe(commitCid);
   });
 
-  test('should auto-initialize profile with static avatar file', async () => {
-    // 1. Create a dummy avatar file
-    const avatarContent = Buffer.from('fake-avatar-data');
-    fs.writeFileSync('avatar.png', avatarContent);
-
-    try {
-        // 2. Reset and re-init
-        await testDb.execute("DELETE FROM repo_blocks");
-        await testDb.execute("DELETE FROM sequencer");
-        await testDb.execute("DELETE FROM blobs");
-        await maybeInitRepo();
-
-        // 3. Verify profile has avatar
-        const profileRes = await axios.get(`${HOST}/xrpc/app.bsky.actor.getProfile?actor=${userDid}`);
-        expect(profileRes.data.avatar).toBeDefined();
-        const avatarCid = profileRes.data.avatar.ref.$link;
-
-        // 4. Verify getBlob serves it
-        const blobRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.getBlob?cid=${avatarCid}`, {
-            responseType: 'arraybuffer'
-        });
-        expect(blobRes.status).toBe(200);
-        expect(Buffer.from(blobRes.data)).toEqual(avatarContent);
-        expect(blobRes.headers['content-type']).toBe('image/png');
-
-    } finally {
-        if (fs.existsSync('avatar.png')) fs.unlinkSync('avatar.png');
-    }
-  });
+  test.todo('Verify avatar handling without static fallback');
 
   test('getSuggestedFollowsByActor should return empty suggestions', async () => {
     const res = await axios.get(`${HOST}/xrpc/app.bsky.graph.getSuggestedFollowsByActor?actor=${userDid}`);

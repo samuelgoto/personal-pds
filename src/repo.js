@@ -6,7 +6,7 @@ import { cborDecode } from '@atproto/common';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
-import { formatDid, getStaticAvatar, createBlobCid } from './util.js';
+import { formatDid, createBlobCid } from './util.js';
 
 export class TursoStorage extends ReadableBlockstore {
   blocks = new BlockMap();
@@ -128,21 +128,7 @@ export async function maybeInitRepo() {
   
   // 2. Handle Avatar if provided
   let avatarBlob = undefined;
-  const staticAvatar = await getStaticAvatar();
-  
-  if (staticAvatar) {
-    console.log(`Using static avatar file: ${staticAvatar.cid}`);
-    await db.execute({
-        sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",
-        args: [staticAvatar.cid, did, staticAvatar.mimeType, staticAvatar.content, new Date().toISOString()]
-    });
-    avatarBlob = {
-        $type: 'blob',
-        ref: { $link: staticAvatar.cid },
-        mimeType: staticAvatar.mimeType,
-        size: staticAvatar.size,
-    };
-  } else if (process.env.AVATAR_URL) {
+  if (process.env.AVATAR_URL) {
     try {
         console.log(`Fetching avatar from ${process.env.AVATAR_URL}...`);
         const response = await axios.get(process.env.AVATAR_URL, { responseType: 'arraybuffer' });

@@ -21,24 +21,6 @@ export async function createBlobCid(content) {
   return CID.createV1(0x55, hash).toString(); // 0x55 is raw codec (typical for blobs)
 }
 
-export async function getStaticAvatar() {
-  const possiblePaths = ['avatar.png', 'avatar.jpg', 'avatar.jpeg'];
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      const content = fs.readFileSync(p);
-      const cid = await createBlobCid(content);
-      const ext = path.extname(p).slice(1);
-      return {
-        cid,
-        mimeType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-        content,
-        size: content.length
-      };
-    }
-  }
-  return null;
-}
-
 /**
  * Wraps a raw 33-byte compressed Secp256k1 public key in a DER-encoded
  * SubjectPublicKeyInfo (SPKI) structure so that Node.js crypto functions 

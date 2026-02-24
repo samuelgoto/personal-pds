@@ -9,7 +9,7 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid, createBlobCid } from './util.js';
+import { cborEncode, cborDecode, formatDid, createTid, createBlobCid } from './util.js';
 
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
@@ -1140,13 +1140,6 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
   try {
     const { cid } = req.query;
     
-    // Check for static avatar fallback
-    const staticAvatar = getStaticAvatar();
-    if (staticAvatar && staticAvatar.cid === cid) {
-        res.setHeader('Content-Type', staticAvatar.mimeType);
-        return res.send(staticAvatar.content);
-    }
-
     const result = await db.execute({
       sql: "SELECT mime_type, content FROM blobs WHERE cid = ?",
       args: [cid]
