@@ -380,7 +380,7 @@ app.get('/.well-known/oauth-protected-resource', async (req, res) => {
     resource: issuer,
     authorization_servers: [issuer],
     scopes_supported: ['atproto'],
-    bearer_methods_supported: ['authorization_header'],
+    bearer_methods_supported: ['header'],
     resource_documentation: 'https://atproto.com/specs/oauth'
   });
 });
