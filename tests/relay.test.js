@@ -110,4 +110,47 @@ describe('Relay Interaction & Protocol Compliance', () => {
     expect(data[0]).toBe(0xa2); 
     ws.close();
   });
+
+  test('should verify firehose event sequence and structure', async () => {
+    const ws = new WebSocket(`ws://${HOST}/xrpc/com.atproto.sync.subscribeRepos`);
+    await new Promise((resolve) => ws.on('open', resolve));
+
+    const events = [];
+    ws.on('message', (data) => {
+      events.push(data);
+    });
+
+    const loginRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.server.createSession`, {
+      identifier: 'localhost.test',
+      password: process.env.PASSWORD
+    });
+    const token = loginRes.data.accessJwt;
+
+    // Create 2 records to trigger 2 events
+    await axios.post(`${PDS_URL}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.post',
+      record: { $type: 'app.bsky.feed.post', text: 'Event 1', createdAt: new Date().toISOString() }
+    }, { headers: { Authorization: `Bearer ${token}` } });
+
+    await axios.post(`${PDS_URL}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.post',
+      record: { $type: 'app.bsky.feed.post', text: 'Event 2', createdAt: new Date().toISOString() }
+    }, { headers: { Authorization: `Bearer ${token}` } });
+
+    // Wait for events
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    
+    // Minimal validation of the second event (the latest commit)
+    const lastEvent = events[events.length - 1];
+    expect(lastEvent[0]).toBe(0xa2); // CBOR map
+    
+    ws.close();
+  });
+
+  test.todo('Verify subscribeRepos "since" parameter compliance');
+  test.todo('Verify com.atproto.sync.getRepo pagination and CAR structure compliance');
 });
