@@ -10,6 +10,7 @@ import { formatDid, createBlobCid } from './util.js';
 
 export class TursoStorage extends ReadableBlockstore {
   blocks = new BlockMap();
+  newBlocks = new BlockMap();
   root = null;
 
   async getBytes(cid) {
@@ -54,6 +55,7 @@ export class TursoStorage extends ReadableBlockstore {
 
   async putBlock(cid, block) {
     this.blocks.set(cid, block);
+    this.newBlocks.set(cid, block);
     await db.execute({
       sql: 'INSERT OR IGNORE INTO repo_blocks (cid, block) VALUES (?, ?)',
       args: [cid.toString(), block]

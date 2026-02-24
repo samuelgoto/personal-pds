@@ -748,14 +748,13 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const finalRkey = rkey || createTid();
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record }], keypair);
     
-    // The path in MST is "collection/rkey", accessed via .data.get()
     const recordCid = await updatedRepo.data.get(collection + '/' + finalRkey);
     if (!recordCid) {
         console.error(`Failed to find CID in MST for path: ${collection}/${finalRkey}`);
     }
 
-    const carBlocks = await storage.getRepoBlocks();
-    const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
+    // Nuance: Firehose events should ideally only contain the NEW blocks (the diff)
+    const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
     await sequencer.sequenceEvent({
       type: 'commit',
@@ -766,8 +765,11 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: recordCid || updatedRepo.cid }],
+        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: recordCid }],
+        blobs: [], // Placeholder
         time: new Date().toISOString(),
+        rebase: false,
+        tooBig: false,
       }
     });
     
@@ -802,8 +804,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
         console.error(`Failed to find CID in MST for path: ${collection}/${rkey}`);
     }
 
-    const carBlocks = await storage.getRepoBlocks();
-    const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
+    const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
     await sequencer.sequenceEvent({
       type: 'commit',
@@ -814,8 +815,11 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: recordCid || updatedRepo.cid }],
+        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: recordCid }],
+        blobs: [],
         time: new Date().toISOString(),
+        rebase: false,
+        tooBig: false,
       }
     });
     
@@ -844,8 +848,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
     
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Delete, collection, rkey }], keypair);
 
-    const carBlocks = await storage.getRepoBlocks();
-    const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
+    const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
     await sequencer.sequenceEvent({
       type: 'commit',
@@ -857,7 +860,10 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
         ops: [{ action: 'delete', path: `${collection}/${rkey}`, cid: null }],
+        blobs: [],
         time: new Date().toISOString(),
+        rebase: false,
+        tooBig: false,
       }
     });
     
@@ -903,9 +909,7 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
             cid: cid
         });
     }
-
-    const carBlocks = await storage.getRepoBlocks();
-    const blocks = await blocksToCarFile(updatedRepo.cid, carBlocks);
+    const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
     await sequencer.sequenceEvent({
       did: user.did,

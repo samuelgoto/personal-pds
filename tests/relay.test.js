@@ -151,6 +151,57 @@ describe('Relay Interaction & Protocol Compliance', () => {
     ws.close();
   });
 
+  test('should verify like creation and firehose broadcast', async () => {
+    const ws = new WebSocket(`ws://${HOST}/xrpc/com.atproto.sync.subscribeRepos`);
+    await new Promise((resolve) => ws.on('open', resolve));
+
+    const events = [];
+    ws.on('message', (data) => {
+      events.push(data);
+    });
+
+    const loginRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.server.createSession`, {
+      identifier: 'localhost.test',
+      password: process.env.PASSWORD
+    });
+    const token = loginRes.data.accessJwt;
+
+    // 1. Create a post to like
+    const postRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.post',
+      record: { $type: 'app.bsky.feed.post', text: 'Post to like', createdAt: new Date().toISOString() }
+    }, { headers: { Authorization: `Bearer ${token}` } });
+    
+    const postUri = postRes.data.uri;
+    const postCid = postRes.data.cid;
+
+    // 2. Create a like
+    const likeRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.repo.createRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.feed.like',
+      record: { 
+        $type: 'app.bsky.feed.like', 
+        subject: { uri: postUri, cid: postCid },
+        createdAt: new Date().toISOString() 
+      }
+    }, { headers: { Authorization: `Bearer ${token}` } });
+
+    expect(likeRes.status).toBe(200);
+
+    // 2.5 Verify blocks exist in database
+    const dbBlocks = await testDb.execute('SELECT count(*) as count FROM repo_blocks');
+    expect(dbBlocks.rows[0].count).toBeGreaterThan(1); // Should have more than just the initial repo blocks
+
+    // 3. Wait for firehose events
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // We expect at least 3 events: identity/profile (from setup), post, and like
+    expect(events.length).toBeGreaterThanOrEqual(3);
+    
+    ws.close();
+  });
+
   test.todo('Verify subscribeRepos "since" parameter compliance');
   test.todo('Verify com.atproto.sync.getRepo pagination and CAR structure compliance');
 });
