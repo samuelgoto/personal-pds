@@ -9,10 +9,14 @@ export function createToken(did, handle) {
 }
 
 export function createAccessToken(did, handle, jkt, issuer, client_id) {
+  // ATProto OAuth nuance: The resource server identifier is its did:web
+  const pdsHost = issuer.replace(/^https?:\/\//, '');
+  const pdsDidWeb = `did:web:${pdsHost}`;
+  
   const payload = {
     iss: issuer,
     sub: did,
-    aud: [issuer, client_id], // Nuance: Many clients validate aud even on access tokens
+    aud: [pdsDidWeb, client_id], // Identifying the PDS by its did:web
     handle,
     cnf: { jkt },
     scope: 'atproto'
