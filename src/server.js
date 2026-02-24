@@ -360,7 +360,7 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
-    token_endpoint_auth_methods_supported: ['none'],
+    token_endpoint_auth_methods_supported: ['none', 'client_id_metadata_document'],
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     dpop_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     code_challenge_methods_supported: ['S256'],
