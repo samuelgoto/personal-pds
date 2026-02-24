@@ -9,11 +9,10 @@ export function createToken(did, handle) {
 }
 
 export function createAccessToken(did, handle, jkt, issuer, client_id) {
-  const pdsDid = (process.env.PDS_DID || '').trim();
   const payload = {
     iss: issuer,
     sub: did,
-    aud: pdsDid || issuer, // Nuance: Access Token audience MUST be the PDS DID (falling back to issuer URL)
+    aud: [issuer, client_id], // Nuance: Many clients validate aud even on access tokens
     handle,
     cnf: { jkt },
     scope: 'atproto'

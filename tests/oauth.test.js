@@ -275,7 +275,8 @@ describe('ATProto OAuth Implementation Tests', () => {
       // Nuance: Verify token claims
       const decoded = jwt.decode(accessToken);
       expect(decoded.iss).toBe(HOST);
-      expect(decoded.aud).toBe(userDid);
+      expect(decoded.aud).toContain(HOST);
+      expect(decoded.aud).toContain(client_id);
       expect(decoded.sub).toBe(userDid);
 
       // 5. Verify DPoP-bound access to protected route
