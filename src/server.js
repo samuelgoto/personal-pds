@@ -365,6 +365,7 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
     dpop_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
+    client_id_metadata_document_supported: true,
     protected_resources: [issuer]
   });
 });
