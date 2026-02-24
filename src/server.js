@@ -307,6 +307,13 @@ export const getHost = (req) => {
   return host;
 };
 
+const getBlobUrl = (req, blob) => {
+  if (!blob || !blob.ref || !blob.ref.$link) return undefined;
+  const host = getHost(req);
+  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production' || !host.includes('localhost')) ? 'https' : 'http';
+  return `${protocol}://${host}/xrpc/com.atproto.sync.getBlob?cid=${blob.ref.$link}`;
+};
+
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
   const domain = (process.env.DOMAIN || 'localhost').split(':')[0];
@@ -945,8 +952,8 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
         handle: user.handle,
         displayName: profile.displayName || user.handle,
         description: profile.description || '',
-        avatar: profile.avatar,
-        banner: profile.banner,
+        avatar: getBlobUrl(req, profile.avatar),
+        banner: getBlobUrl(req, profile.banner),
         associated: {
             activitySubscription: { allowSubscriptions: 'followers' }
         },
@@ -983,8 +990,8 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
                 handle: user.handle,
                 displayName: profile.displayName || user.handle,
                 description: profile.description || '',
-                avatar: profile.avatar,
-                banner: profile.banner,
+                avatar: getBlobUrl(req, profile.avatar),
+                banner: getBlobUrl(req, profile.banner),
                 associated: {
                     activitySubscription: { allowSubscriptions: 'followers' }
                 },
@@ -1070,7 +1077,7 @@ const getAuthorFeed = async (req, res, actor, limit) => {
         did: user.did,
         handle: user.handle,
         displayName: profile?.displayName || user.handle,
-        avatar: profile?.avatar,
+        avatar: getBlobUrl(req, profile?.avatar),
         associated: {
             activitySubscription: { allowSubscriptions: 'followers' }
         },
@@ -1213,7 +1220,7 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
         did: user.did,
         handle: user.handle,
         displayName: profile?.displayName || user.handle,
-        avatar: profile?.avatar,
+        avatar: getBlobUrl(req, profile?.avatar),
         associated: {
             activitySubscription: { allowSubscriptions: 'followers' }
         },
