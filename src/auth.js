@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { createHash, createPublicKey, createPrivateKey, verify as cryptoVerify } from 'crypto';
+import { createHash, createPublicKey, createPrivateKey, createECDH, verify as cryptoVerify } from 'crypto';
 import * as cryptoAtp from '@atproto/crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
@@ -8,11 +8,12 @@ export function createToken(did, handle) {
   return jwt.sign({ sub: did, handle }, JWT_SECRET, { expiresIn: '24h' });
 }
 
-export function createAccessToken(did, handle, jkt, issuer) {
+export function createAccessToken(did, handle, jkt, issuer, client_id) {
+  const pdsDid = (process.env.PDS_DID || '').trim();
   const payload = {
     iss: issuer,
     sub: did,
-    aud: issuer,
+    aud: pdsDid || issuer, // Nuance: Access Token audience MUST be the PDS DID (falling back to issuer URL)
     handle,
     cnf: { jkt },
     scope: 'atproto'
@@ -20,24 +21,10 @@ export function createAccessToken(did, handle, jkt, issuer) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 }
 
-export function createIdToken(did, handle, client_id, issuer) {
+export async function createIdToken(did, handle, client_id, issuer) {
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) throw new Error('No PDS private key');
 
-  // We need to sign this with the actual PDS private key (ES256K)
-  const privateKey = createPrivateKey({
-    key: Buffer.concat([Buffer.from([0x30, 0x3e, 0x02, 0x01, 0x01, 0x04, 0x20]), Buffer.from(privKeyHex, 'hex'), Buffer.from([0xa0, 0x07, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a, 0xa1, 0x44, 0x03, 0x42, 0x00]), Buffer.from(new Uint8Array(65))]), // Simplified DER wrapper
-    format: 'der',
-    type: 'sec1'
-  });
-
-  // Actually, for Secp256k1 signing in Node, we need a specific format.
-  // Let's use a simpler way: @atproto/crypto for signing and then wrap in JWT.
-  // But jsonwebtoken is more convenient for claims.
-  
-  // Alternative: sign access tokens with HS256 (internal to PDS)
-  // and sign ID tokens with ES256K (publicly verifiable).
-  
   const payload = {
     iss: issuer,
     sub: did,
@@ -48,11 +35,16 @@ export function createIdToken(did, handle, client_id, issuer) {
     preferred_username: handle
   };
 
-  // We'll use the JWT_SECRET for now to keep it working, but 
-  // in a real PDS this MUST be signed with the PDS private key.
-  // Given we are in a "Simple PDS", HS256 might be enough if the client trusts our issuer.
-  // But the error says "invalid audience", which is about claims.
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
+  const header = { typ: 'JWT', alg: 'ES256K' };
+  const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const data = Buffer.from(`${headerB64}.${payloadB64}`);
+
+  const keypair = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+  const sig = await keypair.sign(data);
+  const sigB64 = Buffer.from(sig).toString('base64url');
+
+  return `${headerB64}.${payloadB64}.${sigB64}`;
 }
 
 export function verifyToken(token) {
@@ -93,9 +85,19 @@ export async function validateDpop(req, access_token = null) {
 
   // Verify DPoP signature using the JWK
   try {
-    const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
-    // jsonwebtoken handles the signature format conversion (raw vs DER) for EC keys
-    jwt.verify(dpop, publicKey, { algorithms: ['ES256', 'ES256K', 'RS256'] });
+    if (jwk.kty === 'EC' && jwk.crv === 'secp256k1') {
+      const publicKeyBytes = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]));
+      const keypair = cryptoAtp.Secp256k1Keypair.fromPublicKey(publicKeyBytes);
+      const [headerB64, payloadB64, sigB64] = dpop.split('.');
+      const data = Buffer.from(`${headerB64}.${payloadB64}`);
+      const signature = Buffer.from(sigB64, 'base64url');
+      const verified = await keypair.verify(data, signature);
+      if (!verified) throw new Error('DPoP signature verification failed');
+    } else {
+      const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
+      // jsonwebtoken handles the signature format conversion (raw vs DER) for EC keys
+      jwt.verify(dpop, publicKey, { algorithms: ['ES256', 'RS256'] });
+    }
   } catch (err) {
     throw new Error(`DPoP signature verification failed: ${err.message}`);
   }
@@ -110,16 +112,16 @@ export async function validateDpop(req, access_token = null) {
   const host = req.get('host');
   const path = (req.originalUrl || req.url).split('?')[0];
   const expectedHtu = `${protocol}://${host}${path}`;
-  
+
   if (htu !== expectedHtu) {
     // Be lenient with trailing slashes
     const normalizedHtu = htu.endsWith('/') ? htu.slice(0, -1) : htu;
     const normalizedExpected = expectedHtu.endsWith('/') ? expectedHtu.slice(0, -1) : expectedHtu;
     if (normalizedHtu !== normalizedExpected) {
+      console.error(`DPoP htu mismatch debug: expected ${expectedHtu}, got ${htu}`);
       throw new Error(`DPoP htu mismatch: expected ${expectedHtu}, got ${htu}`);
     }
   }
-
 
   // If access_token is provided, verify it's bound to this jkt
   if (access_token) {

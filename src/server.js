@@ -4,12 +4,12 @@ import { createToken, verifyToken, createAccessToken, createIdToken, validateDpo
 import { TursoStorage, getRootCid } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
-import { createHash, randomBytes, createPublicKey } from 'crypto';
+import { createHash, randomBytes, createPublicKey, createECDH } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid, createBlobCid, wrapCompressedSecp256k1 } from './util.js';
+import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid, createBlobCid } from './util.js';
 
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
@@ -198,7 +198,7 @@ app.post('/oauth/token', async (req, res) => {
         }
       }
 
-      const access_token = createAccessToken(row.did, user.handle, jkt, issuer);
+      const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id);
       const new_refresh_token = randomBytes(32).toString('hex');
 
       await db.execute({
@@ -220,7 +220,7 @@ app.post('/oauth/token', async (req, res) => {
       };
 
       if (row.scope.includes('openid')) {
-        response.id_token = createIdToken(row.did, user.handle, client_id, issuer);
+        response.id_token = await createIdToken(row.did, user.handle, client_id, issuer);
       }
 
       res.json(response);
@@ -239,7 +239,7 @@ app.post('/oauth/token', async (req, res) => {
         return res.status(400).json({ error: 'invalid_dpop_key' });
       }
 
-      const access_token = createAccessToken(row.did, user.handle, jkt, issuer);
+      const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id);
       const new_refresh_token = randomBytes(32).toString('hex');
 
       await db.execute({
@@ -258,7 +258,7 @@ app.post('/oauth/token', async (req, res) => {
       };
 
       if (row.scope.includes('openid')) {
-        response.id_token = createIdToken(row.did, user.handle, client_id, issuer);
+        response.id_token = await createIdToken(row.did, user.handle, client_id, issuer);
       }
 
       res.json(response);
@@ -299,7 +299,10 @@ const getSystemMeta = async (key) => {
 
 // Helper to get the current host safely
 export const getHost = (req) => {
-  return process.env.DOMAIN || req.get('host') || 'localhost';
+  if (process.env.DOMAIN && process.env.DOMAIN !== 'localhost') return process.env.DOMAIN;
+  const host = req.get('host') || 'localhost';
+  console.log(`DEBUG: getHost derived host="${host}" from req.get("host")`);
+  return host;
 };
 
 // Helper to get the single allowed user from Env
@@ -440,22 +443,21 @@ app.get('/.well-known/jwks.json', async (req, res) => {
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) return res.status(500).json({ error: 'NoPrivateKey' });
   
+  const ecdh = createECDH('secp256k1');
+  ecdh.setPrivateKey(Buffer.from(privKeyHex, 'hex'));
+  const uncompressed = ecdh.getPublicKey();
+  const x = uncompressed.slice(1, 33).toString('base64url');
+  const y = uncompressed.slice(33, 65).toString('base64url');
+
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
   const did = keypair.did();
 
-  // ATProto Secp256k1 keys are 33 bytes (compressed).
-  // We need to derive the uncompressed coordinates for a standard JWK.
-  // We can use createPublicKey to get the uncompressed key.
-  const publicKey = createPublicKey({
-    key: wrapCompressedSecp256k1(keypair.publicKey),
-    format: 'der',
-    type: 'spki'
-  });
-  const jwk = publicKey.export({ format: 'jwk' });
-
   res.json({
     keys: [{
-      ...jwk,
+      kty: 'EC',
+      crv: 'secp256k1',
+      x,
+      y,
       use: 'sig',
       alg: 'ES256K',
       kid: did

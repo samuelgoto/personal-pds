@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { runFullSetup } from '../src/setup.js';
 import { createHash, randomBytes } from 'crypto';
 import jwt from 'jsonwebtoken';
+import nock from 'nock';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,35 @@ describe('ATProto OAuth Implementation Tests', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
+    // Mock client metadata fetches
+    nock('https://client.example.com')
+      .persist()
+      .get('/meta.json')
+      .reply(200, {
+        client_id: 'https://client.example.com/meta.json',
+        client_name: 'Example Client',
+        redirect_uris: ['https://client.example.com/callback'],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: 'atproto',
+        token_endpoint_auth_method: 'none',
+        dpop_bound_access_tokens: true
+      });
+
+    nock('http://localhost')
+      .persist()
+      .get('/client-metadata.json')
+      .reply(200, {
+        client_id: 'http://localhost/client-metadata.json',
+        redirect_uris: ['http://localhost/callback'],
+        scope: 'atproto openid'
+      });
+
+
+
+
+
+
     process.env.PASSWORD = password;
     process.env.DOMAIN = `localhost:${PORT}`;
     const dbName = `oauth-${Date.now()}.db`;
@@ -65,6 +95,7 @@ describe('ATProto OAuth Implementation Tests', () => {
     sequencer.close();
     testDb.close();
     await new Promise((resolve) => server.close(resolve));
+    nock.cleanAll();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;
     const walPath = `${dbPath}-wal`;
@@ -138,6 +169,38 @@ describe('ATProto OAuth Implementation Tests', () => {
       expect(res.data.request_uri).toMatch(/^urn:ietf:params:oauth:request_uri:/);
     });
 
+    test('Authorize with request_uri (PAR flow) resolves correctly', async () => {
+      // 1. Push the request (PAR)
+      const fullScope = "atproto blob:*/* repo?collection=app.bsky.feed.post&action=create repo?collection=app.bsky.actor.status repo?collection=app.bsky.graph.block repo?collection=app.bsky.graph.follow rpc:app.bsky.actor.getProfile?aud=did:web:api.bsky.app%23bsky_appview rpc:app.bsky.actor.getProfiles?aud=did:web:api.bsky.app%23bsky_appview include:place.stream.authFull rpc:com.atproto.moderation.createReport?aud=* repo?collection=place.stream.broadcast.origin repo?collection=place.stream.broadcast.syndication repo?collection=place.stream.chat.gate repo?collection=place.stream.chat.message repo?collection=place.stream.chat.profile repo?collection=place.stream.key repo?collection=place.stream.live.recommendations repo?collection=place.stream.live.teleport repo?collection=place.stream.livestream repo?collection=place.stream.metadata.configuration repo?collection=place.stream.moderation.permission repo?collection=place.stream.multistream.target repo?collection=place.stream.segment repo?collection=place.stream.server.settings";
+      
+      const params = new URLSearchParams();
+      params.append('client_id', client_id);
+      params.append('redirect_uri', redirect_uri);
+      params.append('scope', fullScope);
+      params.append('state', 'stream-place-state');
+      params.append('code_challenge', 'challenge');
+      params.append('code_challenge_method', 'S256');
+
+      const parRes = await axios.post(`${HOST}/oauth/par`, params.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      const request_uri = parRes.data.request_uri;
+
+      // 2. Perform the GET /oauth/authorize with the request_uri
+      const authRes = await axios.get(`${HOST}/oauth/authorize`, {
+        params: {
+          client_id,
+          request_uri
+        }
+      });
+
+      expect(authRes.status).toBe(200);
+      expect(authRes.data).toContain('Authorize ' + client_id);
+      expect(authRes.data).toContain('value="stream-place-state"');
+      // Nuance: Verify that the extensive scope is correctly passed through and handled in the form
+      expect(authRes.data).toContain('value="' + fullScope + '"');
+    });
+
     test('Full login flow with PKCE and DPoP binding', async () => {
       // 1. Setup PKCE
       const codeVerifier = randomBytes(32).toString('base64url');
@@ -209,6 +272,12 @@ describe('ATProto OAuth Implementation Tests', () => {
 
       const accessToken = tokenRes.data.access_token;
 
+      // Nuance: Verify token claims
+      const decoded = jwt.decode(accessToken);
+      expect(decoded.iss).toBe(HOST);
+      expect(decoded.aud).toBe(userDid);
+      expect(decoded.sub).toBe(userDid);
+
       // 5. Verify DPoP-bound access to protected route
       const protectedDpop = await createDpopHeader(`${HOST}/xrpc/com.atproto.server.getSession`, 'GET');
       const sessionRes = await axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {
@@ -219,6 +288,56 @@ describe('ATProto OAuth Implementation Tests', () => {
       });
       expect(sessionRes.status).toBe(200);
       expect(sessionRes.data.did).toBe(userDid);
+    });
+
+    test('ID Token contains correct audience (client_id)', async () => {
+      const my_client_id = 'http://localhost/client-metadata.json';
+      const my_redirect_uri = 'http://localhost/callback';
+      
+      const codeVerifier = randomBytes(32).toString('base64url');
+      const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+
+      // 1. Authorize with openid scope
+      const authRes = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+        client_id: my_client_id,
+        redirect_uri: my_redirect_uri,
+        scope: 'atproto openid',
+        state: 'test-state',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        password: password
+      }).toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        maxRedirects: 0,
+        validateStatus: s => s === 302
+      });
+
+      const code = new URL(authRes.headers.location).searchParams.get('code');
+
+      // 2. Exchange for tokens
+      const { generateKeyPairSync } = await import('crypto');
+      const { publicKey, privateKey } = generateKeyPairSync('ec', {
+        namedCurve: 'P-256',
+      });
+      const dpopJwk = publicKey.export({ format: 'jwk' });
+      const dpopHeader = jwt.sign({ htu: `${HOST}/oauth/token`, htm: 'POST', iat: Math.floor(Date.now()/1000), jti: '1' }, privateKey, { algorithm: 'ES256', header: { typ: 'dpop+jwt', alg: 'ES256', jwk: dpopJwk } });
+
+      const tokenRes = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: my_redirect_uri,
+        client_id: my_client_id,
+        code_verifier: codeVerifier
+      }).toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'DPoP': dpopHeader }
+      });
+
+      expect(tokenRes.data.id_token).toBeDefined();
+      const decodedId = jwt.decode(tokenRes.data.id_token);
+      
+      // Nuance: ID Token audience MUST be the client_id
+      expect(decodedId.aud).toBe(my_client_id);
+      expect(decodedId.iss).toBe(HOST);
     });
   });
 
