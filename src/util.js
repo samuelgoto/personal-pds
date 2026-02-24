@@ -2,8 +2,27 @@ import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
 import { TID } from '@atproto/common';
-import { encode as cborEncode, decode as cborDecode } from 'cborg';
+import * as cborg from 'cborg';
 import { CID } from 'multiformats/cid';
+
+export function cborEncode(obj) {
+  return cborg.encode(obj);
+}
+
+export function cborDecode(bytes) {
+  return cborg.decode(bytes, {
+    tags: {
+      42: (value) => {
+        if (value instanceof Uint8Array) {
+          // ATProto CID tag 42 usually has a leading 0x00 byte
+          const cidBytes = value[0] === 0 ? value.subarray(1) : value;
+          return CID.decode(cidBytes);
+        }
+        return value;
+      }
+    }
+  });
+}
 import * as sha256 from 'multiformats/hashes/sha2';
 
 export function formatDid(hostname) {
@@ -59,5 +78,3 @@ export function wrapCompressedSecp256k1(publicKeyBytes) {
   ]);
   return Buffer.concat([header, Buffer.from(publicKeyBytes)]);
 }
-
-export { cborEncode, cborDecode };

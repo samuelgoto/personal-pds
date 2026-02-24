@@ -2,11 +2,10 @@ import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile, WriteOpAction } fr
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
-import * as cborg from 'cborg';
+import { cborDecode, cborEncode, formatDid, createBlobCid } from './util.js';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
-import { formatDid, createBlobCid } from './util.js';
 
 export class TursoStorage extends ReadableBlockstore {
   blocks = new BlockMap();
@@ -101,7 +100,7 @@ export const getRootCid = async () => {
       sql: "SELECT event FROM sequencer WHERE type = 'commit' ORDER BY seq DESC LIMIT 1"
     });
     if (res.rows.length === 0) return null;
-    const event = cborg.decode(new Uint8Array(res.rows[0].event));
+    const event = cborDecode(new Uint8Array(res.rows[0].event));
     if (!event.commit) return null;
     if (typeof event.commit === 'string') return event.commit;
     

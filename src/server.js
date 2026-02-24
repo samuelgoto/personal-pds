@@ -9,8 +9,7 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import * as cborg from 'cborg';
-import { formatDid, createTid, createBlobCid } from './util.js';
+import { cborEncode, cborDecode, formatDid, createTid, createBlobCid } from './util.js';
 
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
@@ -1710,7 +1709,7 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
         console.log(`TAP getLatestCommit: No sequencer event or Root CID found`);
         return res.status(404).json({ error: 'RepoNotFound' });
     }
-    const event = cborg.decode(new Uint8Array(result.rows[0].event));
+    const event = cborDecode(new Uint8Array(result.rows[0].event));
 
     res.setHeader('Content-Type', 'application/json');
     res.json({
@@ -1740,7 +1739,7 @@ app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
 
     let rev = '';
     if (result.rows.length > 0) {
-      const event = cborg.decode(new Uint8Array(result.rows[0].event));
+      const event = cborDecode(new Uint8Array(result.rows[0].event));
       rev = event.rev || '';
     }
 
