@@ -102,8 +102,23 @@ export const getRootCid = async () => {
     });
     if (res.rows.length === 0) return null;
     const event = cborg.decode(new Uint8Array(res.rows[0].event));
-    return event.commit.toString();
+    if (!event.commit) return null;
+    if (typeof event.commit === 'string') return event.commit;
+    
+    // If it's a cborg-style CID object, convert it
+    if (event.commit.asCID === event.commit || event.commit._Symbol_for_multiformats_cid) {
+        return event.commit.toString();
+    }
+    
+    // Fallback for plain objects from cborg
+    try {
+        return CID.decode(event.commit.bytes || event.commit).toString();
+    } catch (e) {
+        // If all else fails, try to see if it has a / link (common in some CID JSON formats)
+        return (event.commit['/'] || event.commit).toString();
+    }
   } catch (e) {
+    console.error('Error in getRootCid:', e);
     return null; 
   }
 };
