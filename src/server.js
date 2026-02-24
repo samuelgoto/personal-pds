@@ -343,6 +343,7 @@ app.get('/.well-known/atproto-did', async (req, res) => {
 });
 
 app.get('/.well-known/oauth-authorization-server', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
   const issuer = `${protocol}://${host}`;
@@ -366,6 +367,7 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
 });
 
 app.get('/.well-known/oauth-protected-resource', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   const host = getHost(req);
   const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
   const issuer = `${protocol}://${host}`;
