@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { jest } from '@jest/globals';
 import http from 'http';
 import nock from 'nock';
 import axios from 'axios';
@@ -30,6 +31,8 @@ describe('Relay Interaction & Protocol Compliance', () => {
   let dbPath;
 
   beforeAll(async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
     process.env.PASSWORD = 'relay-pass';
     process.env.DOMAIN = HOST;
     const dbName = `relay-${Date.now()}.db`;

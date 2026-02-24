@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { jest } from '@jest/globals';
 import http from 'http';
 import axios from 'axios';
 import { BskyAgent } from '@atproto/api';
@@ -29,6 +30,8 @@ describe('PDS Local Tests', () => {
   let dbPath;
 
   beforeAll(async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
     process.env.PASSWORD = PASSWORD;
     process.env.DOMAIN = `localhost:${PORT}`;
     const dbName = `test-${Date.now()}.db`;

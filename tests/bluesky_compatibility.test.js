@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { jest } from '@jest/globals';
 import http from 'http';
 import axios from 'axios';
 import app, { wss } from '../src/server.js';
@@ -27,6 +28,8 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
   let dbPath;
 
   beforeAll(async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
     process.env.PASSWORD = 'compat-pass';
     process.env.DOMAIN = DOMAIN;
     const dbName = `compat-${Date.now()}.db`;
@@ -42,10 +45,13 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
   });
 
   afterAll(async () => {
+    for (const client of wss.clients) {
+      client.terminate();
+    }
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise((resolve) => server.close(() => resolve()));
+    await new Promise((resolve) => server.close(resolve));
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;
     const walPath = `${dbPath}-wal`;
