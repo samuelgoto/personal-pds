@@ -595,14 +595,29 @@ const getDidDoc = async (req, host) => {
 app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
   try {
     const { did } = req.query;
+    if (!did) return res.status(400).json({ error: 'InvalidRequest', message: 'Missing did' });
+
     const pdsDid = (process.env.PDS_DID || '').trim();
-    if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) return res.status(404).json({ error: 'DidNotFound' });
+    if (did.toLowerCase() === pdsDid.toLowerCase()) {
+      const host = getHost(req);
+      const doc = await getDidDoc(req, host);
+      if (!doc) return res.status(404).json({ error: 'DidNotFound' });
+      return res.json(doc);
+    }
 
-    const host = getHost(req);
-    const doc = await getDidDoc(req, host);
-    if (!doc) return res.status(404).json({ error: 'DidNotFound' });
+    // Proxy other DIDs to plc.directory if they are did:plc
+    if (did.startsWith('did:plc:')) {
+      try {
+        console.log(`Proxying resolveDid for ${did} to plc.directory...`);
+        const plcRes = await axios.get(`https://plc.directory/${did}`, { timeout: 5000 });
+        return res.json(plcRes.data);
+      } catch (err) {
+        console.error(`plc.directory error for ${did}: ${err.message}`);
+        return res.status(404).json({ error: 'DidNotFound', message: `Proxy failed: ${err.message}` });
+      }
+    }
 
-    res.json(doc);
+    res.status(404).json({ error: 'DidNotFound' });
   } catch (err) {
     res.status(500).json({ error: 'InternalServerError' });
   }

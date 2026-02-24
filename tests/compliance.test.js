@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { jest } from '@jest/globals';
 import http from 'http';
 import axios from 'axios';
+import nock from 'nock';
 import app, { wss } from '../src/server.js';
 import { createDb, setDb } from '../src/db.js';
 import { sequencer } from '../src/sequencer.js';
@@ -72,6 +73,29 @@ describe('ATProto XRPC Lexicon Compliance', () => {
     });
     expect(res.status).toBe(200);
     expect(res.data).toHaveProperty('did', userDid);
+  });
+
+  test('com.atproto.identity.resolveDid compliance (local and proxy)', async () => {
+    // 1. Resolve local DID
+    const localRes = await axios.get(`${PDS_URL}/xrpc/com.atproto.identity.resolveDid`, {
+      params: { did: userDid }
+    });
+    expect(localRes.status).toBe(200);
+    expect(localRes.data.id).toBe(userDid);
+
+    // 2. Resolve external DID (proxy to plc.directory)
+    const bskyDid = 'did:plc:z72i7hdynmk626deatdbwbxd';
+    
+    // Mock plc.directory
+    nock('https://plc.directory')
+      .get(`/${bskyDid}`)
+      .reply(200, { id: bskyDid, verificationMethod: [] });
+
+    const externalRes = await axios.get(`${PDS_URL}/xrpc/com.atproto.identity.resolveDid`, {
+      params: { did: bskyDid }
+    });
+    expect(externalRes.status).toBe(200);
+    expect(externalRes.data.id).toBe(bskyDid);
   });
 
   test('com.atproto.server.createSession compliance', async () => {
