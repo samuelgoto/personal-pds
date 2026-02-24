@@ -1,11 +1,45 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { TID, cborEncode, cborDecode } from '@atproto/common';
+import { TID } from '@atproto/common';
 import { CID } from 'multiformats/cid';
+import * as cborg from 'cborg';
+import { Token, Type } from 'cborg';
 import * as sha256 from 'multiformats/hashes/sha2';
 
-export { cborEncode, cborDecode };
+export function cborEncode(obj) {
+  return cborg.encode(obj, {
+    typeEncoders: {
+      Object: (obj) => {
+        if (obj.asCID === obj || obj._Symbol_for_multiformats_cid) {
+          const bytes = new Uint8Array(obj.bytes.length + 1);
+          bytes[0] = 0;
+          bytes.set(obj.bytes, 1);
+          // Manually return tokens for Tag 42
+          return [
+            new Token(Type.tag, 42),
+            new Token(Type.bytes, bytes)
+          ];
+        }
+        return undefined;
+      }
+    }
+  });
+}
+
+export function cborDecode(bytes) {
+  return cborg.decode(bytes, {
+    tags: {
+      42: (value) => {
+        if (value instanceof Uint8Array) {
+          const cidBytes = value[0] === 0 ? value.subarray(1) : value;
+          return CID.decode(cidBytes);
+        }
+        return value;
+      }
+    }
+  });
+}
 
 export function formatDid(hostname) {
   if (process.env.PDS_DID) {
