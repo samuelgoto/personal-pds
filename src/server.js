@@ -4,12 +4,12 @@ import { createToken, verifyToken, createAccessToken, createIdToken, validateDpo
 import { TursoStorage, getRootCid } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, createPublicKey } from 'crypto';
 import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid, createBlobCid } from './util.js';
+import { cborEncode, cborDecode, formatDid, getStaticAvatar, createTid, createBlobCid, wrapCompressedSecp256k1 } from './util.js';
 
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
@@ -447,7 +447,7 @@ app.get('/.well-known/jwks.json', async (req, res) => {
   // We need to derive the uncompressed coordinates for a standard JWK.
   // We can use createPublicKey to get the uncompressed key.
   const publicKey = createPublicKey({
-    key: Buffer.concat([Buffer.from([0x30, 0x56, 0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a, 0x03, 0x42, 0x00]), Buffer.from(keypair.publicKey)]),
+    key: wrapCompressedSecp256k1(keypair.publicKey),
     format: 'der',
     type: 'spki'
   });
