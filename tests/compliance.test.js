@@ -176,6 +176,49 @@ describe('ATProto XRPC Lexicon Compliance', () => {
     expect(res.data.value.text).toBe(post.text);
   });
 
+  test('app.bsky.actor.getProfile transforms avatar blobs to URLs', async () => {
+    // 1. Login
+    const login = await axios.post(`${PDS_URL}/xrpc/com.atproto.server.createSession`, {
+      identifier: 'localhost.test',
+      password: 'compliance-pass'
+    });
+    const token = login.data.accessJwt;
+
+    // 2. Upload a dummy blob
+    const blobContent = Buffer.from('fake-image-data');
+    const uploadRes = await axios.post(`${PDS_URL}/xrpc/com.atproto.repo.uploadBlob`, blobContent, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'image/png'
+      }
+    });
+    const avatarBlob = uploadRes.data.blob;
+
+    // 3. Create/Update profile with this blob
+    await axios.post(`${PDS_URL}/xrpc/com.atproto.repo.putRecord`, {
+      repo: userDid,
+      collection: 'app.bsky.actor.profile',
+      rkey: 'self',
+      record: {
+        $type: 'app.bsky.actor.profile',
+        displayName: 'Test User',
+        avatar: avatarBlob
+      }
+    }, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    // 4. Verify getProfile returns a URL string
+    const profileRes = await axios.get(`${PDS_URL}/xrpc/app.bsky.actor.getProfile`, {
+      params: { actor: userDid }
+    });
+
+    expect(profileRes.status).toBe(200);
+    expect(typeof profileRes.data.avatar).toBe('string');
+    expect(profileRes.data.avatar).toContain('/xrpc/com.atproto.sync.getBlob?cid=');
+    expect(profileRes.data.avatar).toContain(avatarBlob.ref.$link);
+  });
+
   test.skip('com.atproto.repo.listRecords pagination compliance', async () => {
     // Skip this for now as we might not have full pagination implemented correctly per spec
   });
