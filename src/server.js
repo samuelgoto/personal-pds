@@ -142,6 +142,12 @@ app.post('/oauth/authorize', async (req, res) => {
   const url = new URL(redirect_uri);
   url.searchParams.set('code', code);
   if (state) url.searchParams.set('state', state);
+  
+  // Add 'iss' parameter as required by RFC 9207
+  const host = getHost(req);
+  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
+  url.searchParams.set('iss', `${protocol}://${host}`);
+  
   res.redirect(url.toString());
 });
 
@@ -346,6 +352,7 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
     authorization_endpoint: `${issuer}/oauth/authorize`,
     token_endpoint: `${issuer}/oauth/token`,
     pushed_authorization_request_endpoint: `${issuer}/oauth/par`,
+    require_pushed_authorization_requests: true,
     jwks_uri: `${issuer}/.well-known/jwks.json`,
     scopes_supported: ['atproto'],
     response_types_supported: ['code'],
@@ -353,7 +360,8 @@ app.get('/.well-known/oauth-authorization-server', async (req, res) => {
     token_endpoint_auth_methods_supported: ['none'],
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     dpop_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
-    code_challenge_methods_supported: ['S256']
+    code_challenge_methods_supported: ['S256'],
+    authorization_response_iss_parameter_supported: true
   });
 });
 
