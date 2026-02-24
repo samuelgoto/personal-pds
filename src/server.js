@@ -755,6 +755,9 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     // Nuance: Firehose events should ideally only contain the NEW blocks (the diff)
     const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
+    // Ensure we have a proper CID object for the ops
+    const opCid = typeof recordCid === 'string' ? CID.parse(recordCid) : recordCid;
+
     await sequencer.sequenceEvent({
       type: 'commit',
       did: user.did,
@@ -764,7 +767,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: recordCid }],
+        ops: [{ action: 'create', path: `${collection}/${finalRkey}`, cid: opCid }],
         blobs: [], // Placeholder
         time: new Date().toISOString(),
         rebase: false,
@@ -805,6 +808,9 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
 
     const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
+    // Ensure we have a proper CID object
+    const opCid = typeof recordCid === 'string' ? CID.parse(recordCid) : recordCid;
+
     await sequencer.sequenceEvent({
       type: 'commit',
       did: user.did,
@@ -814,7 +820,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
         blocks: blocks,
         rev: updatedRepo.commit.rev,
         since: repoObj.commit.rev,
-        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: recordCid }],
+        ops: [{ action: 'update', path: `${collection}/${rkey}`, cid: opCid }],
         blobs: [],
         time: new Date().toISOString(),
         rebase: false,
@@ -900,7 +906,8 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
     for (const w of repoWrites) {
         let cid = null;
         if (w.action !== WriteOpAction.Delete) {
-            cid = await updatedRepo.data.get(w.collection + '/' + w.rkey);
+            const rawCid = await updatedRepo.data.get(w.collection + '/' + w.rkey);
+            cid = typeof rawCid === 'string' ? CID.parse(rawCid) : rawCid;
         }
         ops.push({
             action: w.action.toLowerCase(),

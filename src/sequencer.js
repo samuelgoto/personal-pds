@@ -54,6 +54,12 @@ class Sequencer {
     
     // 2. Encode the FULL event including the seq using DAG-CBOR (canonical)
     const eventWithSeq = { ...evt.event, seq };
+    
+    // Debug: ensure CIDs are objects
+    if (eventWithSeq.commit && typeof eventWithSeq.commit === 'string') {
+        console.error(`[SEQUENCER] WARNING: commit is a string, not CID object! ${eventWithSeq.commit}`);
+    }
+
     const encoded = Buffer.from(cborEncode(eventWithSeq));
 
     // 3. Update the database with the real encoded event
