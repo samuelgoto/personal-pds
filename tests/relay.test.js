@@ -53,10 +53,13 @@ describe('Relay Interaction & Protocol Compliance', () => {
   });
 
   afterAll(async () => {
+    for (const client of wss.clients) {
+      client.terminate();
+    }
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise((resolve) => server.close(() => resolve()));
+    await new Promise((resolve) => server.close(resolve));
     nock.cleanAll();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;

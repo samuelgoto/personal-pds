@@ -49,10 +49,13 @@ describe('PDS Interoperability Tests', () => {
   });
 
   afterAll(async () => {
+    for (const client of wss.clients) {
+      client.terminate();
+    }
     wss.close();
     sequencer.close();
     testDb.close();
-    await new Promise((resolve) => server.close(() => resolve()));
+    await new Promise((resolve) => server.close(resolve));
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;
     const walPath = `${dbPath}-wal`;
