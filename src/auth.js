@@ -56,12 +56,13 @@ export async function validateDpop(req, access_token = null) {
   const jwk = decoded.header.jwk;
   const jkt = getJkt(jwk);
 
-  // If access_token is provided, verify it's bound to this jkt
-  if (access_token) {
-    const payload = verifyToken(access_token);
-    if (!payload || !payload.cnf || payload.cnf.jkt !== jkt) {
-      throw new Error('Token binding mismatch');
-    }
+  // Verify DPoP signature using the JWK
+  try {
+    const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
+    // jsonwebtoken handles the signature format conversion (raw vs DER) for EC keys
+    jwt.verify(dpop, publicKey, { algorithms: ['ES256', 'ES256K', 'RS256'] });
+  } catch (err) {
+    throw new Error(`DPoP signature verification failed: ${err.message}`);
   }
 
   // Basic DPoP claim verification
@@ -70,21 +71,24 @@ export async function validateDpop(req, access_token = null) {
     throw new Error('DPoP htm mismatch');
   }
 
-  // Verify DPoP signature using the JWK
-  try {
-    const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
-    const [headerB64, payloadB64, sigB64] = dpop.split('.');
-    const data = Buffer.from(`${headerB64}.${payloadB64}`);
-    const signature = Buffer.from(sigB64, 'base64url');
-    
-    // Determine algorithm
-    const alg = decoded.header.alg;
-    let hashAlg = 'sha256'; // Default for ES256, ES256K, RS256
-    
-    const verified = cryptoVerify(null, data, publicKey, signature);
-    if (!verified) throw new Error('DPoP signature verification failed');
-  } catch (err) {
-    throw new Error(`DPoP signature verification failed: ${err.message}`);
+  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
+  const fullUrl = `${protocol}://${req.get('host')}${req.originalUrl || req.url}`;
+  const expectedHtu = fullUrl.split('?')[0];
+  if (htu !== expectedHtu) {
+    // Be lenient with trailing slashes
+    const normalizedHtu = htu.endsWith('/') ? htu.slice(0, -1) : htu;
+    const normalizedExpected = expectedHtu.endsWith('/') ? expectedHtu.slice(0, -1) : expectedHtu;
+    if (normalizedHtu !== normalizedExpected) {
+      throw new Error(`DPoP htu mismatch: expected ${expectedHtu}, got ${htu}`);
+    }
+  }
+
+  // If access_token is provided, verify it's bound to this jkt
+  if (access_token) {
+    const payload = verifyToken(access_token);
+    if (!payload || !payload.cnf || payload.cnf.jkt !== jkt) {
+      throw new Error('Token binding mismatch');
+    }
   }
 
   return { jkt, jwk };
