@@ -84,6 +84,7 @@ describe('ATProto OAuth Implementation Tests', () => {
       // Nuance: Required for modern atproto-labs/oauth libraries
       expect(meta.client_id_metadata_document_supported).toBe(true);
       expect(meta.authorization_response_iss_parameter_supported).toBe(true);
+      expect(meta.token_endpoint_auth_methods_supported).toContain('private_key_jwt');
       
       // Nuance: Must support PAR
       expect(meta.pushed_authorization_request_endpoint).toBe(`${HOST}/oauth/par`);
