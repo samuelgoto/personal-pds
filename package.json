@@ -10,7 +10,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "@atproto/common": "^0.5.11",
     "@atproto/crypto": "^0.4.5",

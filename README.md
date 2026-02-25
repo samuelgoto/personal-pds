@@ -80,4 +80,4 @@ npm test
 ```
 
 ## License
-ISC
+Apache License 2.0
