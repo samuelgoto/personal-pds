@@ -315,7 +315,7 @@ const getBlobUrl = (req, blob) => {
 };
 
 // Helper to get the single allowed user from Env
-const getSingleUser = async (req) => {
+const getSingleUser = async (req = null) => {
   const handle = process.env.HANDLE || 'localhost.test';
   
   const did = (process.env.PDS_DID || formatDid(handle.split(':')[0])).trim();
