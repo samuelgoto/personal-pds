@@ -62,7 +62,6 @@ app.use(async (req, res, next) => {
 
 app.use(oauth);
 app.use(admin);
-app.use(proxy);
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const user = req.user;
@@ -998,6 +997,8 @@ app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.ipld.car');
   res.send(Buffer.from(car));
 });
+
+app.use(proxy);
 
 // --- 404 Catch-all ---
 app.use((req, res, next) => {
