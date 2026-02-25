@@ -9,7 +9,7 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, formatDid, createTid, createBlobCid } from './util.js';
+import { cborEncode, cborDecode, formatDid, createTid, createBlobCid, fixCids } from './util.js';
 
 const app = express();
 export const wss = new WebSocketServer({ noServer: true });
@@ -859,12 +859,16 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const user = await getSingleUser(req);
     if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
+    // ATProto nuance: records from clients often have CID strings. 
+    // They MUST be CID objects for proper Tag 42 storage.
+    const fixedRecord = fixCids(record);
+
     const storage = new TursoStorage();
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     
     const finalRkey = rkey || createTid();
-    const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record }], keypair);
+    const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record: fixedRecord }], keypair);
     
     const recordCid = await updatedRepo.data.get(collection + '/' + finalRkey);
     if (!recordCid) {
@@ -913,13 +917,14 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
     const { repo, collection, rkey, record } = req.body;
     const user = await getSingleUser(req);
     if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
-    
+
+    const fixedRecord = fixCids(record);
+
     const storage = new TursoStorage();
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    
-    const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Update, collection, rkey, record }], keypair);
 
+    const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Update, collection, rkey, record: fixedRecord }], keypair);
     const recordCid = await updatedRepo.data.get(collection + '/' + rkey);
     if (!recordCid) {
         console.error(`Failed to find CID in MST for path: ${collection}/${rkey}`);
@@ -1009,9 +1014,9 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
 
     const repoWrites = writes.map(w => {
         if (w.$type === 'com.atproto.repo.applyWrites#create') {
-            return { action: WriteOpAction.Create, collection: w.collection, rkey: w.rkey || createTid(), record: w.value };
+            return { action: WriteOpAction.Create, collection: w.collection, rkey: w.rkey || createTid(), record: fixCids(w.value) };
         } else if (w.$type === 'com.atproto.repo.applyWrites#update') {
-            return { action: WriteOpAction.Update, collection: w.collection, rkey: w.rkey, record: w.value };
+            return { action: WriteOpAction.Update, collection: w.collection, rkey: w.rkey, record: fixCids(w.value) };
         } else if (w.$type === 'com.atproto.repo.applyWrites#delete') {
             return { action: WriteOpAction.Delete, collection: w.collection, rkey: w.rkey };
         }
@@ -1197,7 +1202,11 @@ const fetchExternalPost = async (req, uri) => {
     const response = await axios.get(`${appView}/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0`, {
         timeout: 5000
     });
-    return response.data.thread.post;
+    // AppView returns a thread object which could be a threadViewPost or notFoundPost
+    if (response.data.thread?.post) {
+        return response.data.thread.post;
+    }
+    return response.data.thread;
   } catch (err) {
     console.error(`[EXTERNAL] Failed to fetch external post ${uri}: ${err.message}`);
     return {

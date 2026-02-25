@@ -7,6 +7,44 @@ import * as cborg from 'cborg';
 import { Token, Type } from 'cborg';
 import * as sha256 from 'multiformats/hashes/sha2';
 
+export function fixCids(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(fixCids);
+  
+  // If it's already a CID-like object, convert it
+  if (obj.asCID === obj || obj._Symbol_for_multiformats_cid || (obj.code !== undefined && obj.version !== undefined && obj.hash !== undefined)) {
+    try {
+      return CID.asCID(obj) || CID.create(obj.version, obj.code, obj.hash);
+    } catch (e) {
+      return obj;
+    }
+  }
+
+  // If it's a string that looks like a CID, try to parse it
+  // (Standard ATProto CIDs start with 'bafy')
+  if (typeof obj === 'string' && obj.startsWith('bafy')) {
+    try {
+      return CID.parse(obj);
+    } catch (e) {
+      return obj;
+    }
+  }
+
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    // Standard ATProto link structure: { $link: "..." }
+    if (k === '$link' && typeof v === 'string' && v.startsWith('bafy')) {
+        try {
+            return CID.parse(v);
+        } catch (e) {
+            // fall through
+        }
+    }
+    out[k] = fixCids(v);
+  }
+  return out;
+}
+
 export function cborEncode(obj) {
   return cborg.encode(obj, {
     typeEncoders: {
