@@ -1,7 +1,12 @@
 import express from 'express';
 import { db } from './db.js';
-import { lastRelayPing } from './util.js';
 import * as cbor from '@ipld/dag-cbor';
+
+export let lastRelayPing = null;
+
+export function setLastRelayPing(time) {
+  lastRelayPing = time;
+}
 
 const router = express.Router();
 

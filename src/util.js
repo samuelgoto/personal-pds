@@ -6,12 +6,6 @@ import * as cbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
 import * as crypto from '@atproto/crypto';
 
-export let lastRelayPing = null;
-
-export function setLastRelayPing(time) {
-  lastRelayPing = time;
-}
-
 export const getDidDoc = async (user, host) => {
   if (!user) return null;
 

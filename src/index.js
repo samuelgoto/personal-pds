@@ -3,7 +3,7 @@ import http from 'http';
 import axios from 'axios';
 import { initDb, db } from './db.js';
 import app, { wss } from './server.js';
-import { setLastRelayPing } from './util.js';
+import { setLastRelayPing } from './admin.js';
 import { maybeInitRepo } from './repo.js';
 
 const PORT = process.env.PORT || 3000;
