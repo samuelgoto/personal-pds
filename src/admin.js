@@ -1,6 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
-import { cborDecode, lastRelayPing } from './util.js';
+import { lastRelayPing } from './util.js';
+import * as cbor from '@ipld/dag-cbor';
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ router.get('/', async (req, res) => {
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
   const events = lastEventsRes.rows.map(row => {
     try {
-      const evt = cborDecode(new Uint8Array(row.event));
+      const evt = cbor.decode(new Uint8Array(row.event));
       return {
         seq: row.seq,
         time: row.time,

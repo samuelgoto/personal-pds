@@ -9,7 +9,8 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, createTid, createBlobCid, fixCids, getDidDoc } from './util.js';
+import { createTid, createBlobCid, fixCids, getDidDoc } from './util.js';
+import * as cbor from '@ipld/dag-cbor';
 import oauth from './oauth.js';
 import admin from './admin.js';
 import proxy from './proxy.js';
@@ -636,7 +637,7 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   if (result.rows.length === 0 || !rootCid) {
       return res.status(404).json({ error: 'RepoNotFound' });
   }
-  const event = cborDecode(new Uint8Array(result.rows[0].event));
+  const event = cbor.decode(new Uint8Array(result.rows[0].event));
 
   res.json({
       cid: rootCid,
@@ -661,7 +662,7 @@ app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
 
   let rev = '';
   if (result.rows.length > 0) {
-    const event = cborDecode(new Uint8Array(result.rows[0].event));
+    const event = cbor.decode(new Uint8Array(result.rows[0].event));
     rev = event.rev || '';
   }
 

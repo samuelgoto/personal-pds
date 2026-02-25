@@ -2,6 +2,7 @@ import fs from 'fs';
 import { createHash } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import * as cborg from 'cborg';
+import * as cbor from '@ipld/dag-cbor';
 import { db } from './db.js';
 
 import { WebSocket } from 'ws';
@@ -335,13 +336,13 @@ async function registerPlc(domain, signingKeyHex, rl) {
       prev: null,
     };
 
-    const signature = await rotationKeypair.sign(cborEncode(op));
+    const signature = await rotationKeypair.sign(cbor.encode(op));
     const signedOp = {
       ...op,
       sig: Buffer.from(signature).toString('base64url'),
     };
 
-    const hash = createHash('sha256').update(cborEncode(signedOp)).digest();
+    const hash = createHash('sha256').update(cbor.encode(signedOp)).digest();
     const encoded = base32.encode(hash).slice(1);
     const plcDid = `did:plc:${encoded.slice(0, 24)}`;
 

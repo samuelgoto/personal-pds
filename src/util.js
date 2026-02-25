@@ -3,7 +3,7 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { TID } from '@atproto/common';
 import { CID } from 'multiformats/cid';
-import * as dagCbor from '@ipld/dag-cbor';
+import * as cbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
 import * as crypto from '@atproto/crypto';
 
@@ -86,14 +86,6 @@ export function fixCids(obj) {
     out[k] = fixCids(v);
   }
   return out;
-}
-
-export function cborEncode(obj) {
-  return dagCbor.encode(obj);
-}
-
-export function cborDecode(bytes) {
-  return dagCbor.decode(bytes);
 }
 
 

@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { WebSocket } from 'ws';
-import { cborEncode, cborDecode } from './util.js';
+import * as cbor from '@ipld/dag-cbor';
 
 class Sequencer {
   clients = new Set();
@@ -60,7 +60,7 @@ class Sequencer {
         console.error(`[SEQUENCER] WARNING: commit is a string, not CID object! ${eventWithSeq.commit}`);
     }
 
-    const encoded = Buffer.from(cborEncode(eventWithSeq));
+    const encoded = Buffer.from(cbor.encode(eventWithSeq));
 
     // 3. Update the database with the real encoded event
     await db.execute({
@@ -91,7 +91,7 @@ class Sequencer {
 
   formatEvent(row) {
     const header = { op: 1, t: `#${row.type}` };
-    const encodedHeader = cborEncode(header);
+    const encodedHeader = cbor.encode(header);
     console.log(`[SEQUENCER] Formatting event: type=${row.type}, header_len=${encodedHeader.length}, body_len=${row.event.length}`);
     return Buffer.concat([
         Buffer.from(encodedHeader),
