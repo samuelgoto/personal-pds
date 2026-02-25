@@ -122,3 +122,38 @@ export async function validateDpop(req, access_token = null) {
 
   return { jkt, jwk };
 }
+
+export const auth = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    console.log(`Auth failed: No Authorization header for ${req.url}`);
+    return res.status(401).json({ error: 'AuthenticationRequired' });
+  }
+  const [type, token] = authHeader.split(' ');
+  const jwtToken = (type === 'Bearer' || type === 'DPoP') ? token : type;
+  
+  if (!jwtToken) {
+    console.log(`Auth failed: Empty token for ${req.url}`);
+    return res.status(401).json({ error: 'AuthenticationRequired', message: 'Token missing' });
+  }
+  
+  if (type === 'DPoP') {
+    const { jkt } = await validateDpop(req, jwtToken);
+    const payload = verifyToken(jwtToken);
+    if (!payload || payload.cnf?.jkt !== jkt) {
+      return res.status(401).json({ error: 'InvalidToken', message: 'DPoP binding mismatch' });
+    }
+    if (!req.user) req.user = {};
+    req.user.auth = payload;
+    return next();
+  }
+
+  const payload = verifyToken(jwtToken);
+  if (!payload) {
+    console.log(`Auth failed: Invalid token for ${req.url}`);
+    return res.status(401).json({ error: 'InvalidToken' });
+  }
+  if (!req.user) req.user = {};
+  req.user.auth = payload;
+  next();
+};

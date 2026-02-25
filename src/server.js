@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from './db.js';
-import { createToken, verifyToken, validateDpop, getJkt, createServiceAuthToken } from './auth.js';
+import { createToken, verifyToken, validateDpop, getJkt, createServiceAuthToken, auth } from './auth.js';
 import { TursoStorage, getRootCid, maybeInitRepo } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
@@ -104,40 +104,6 @@ const getBlobUrl = (req, blob) => {
 };
 
 // Helper to get the single allowed user from Env
-
-const auth = async (req, res, next) => {
-  res.setHeader('Content-Type', 'application/json');
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    console.log(`Auth failed: No Authorization header for ${req.url}`);
-    return res.status(401).json({ error: 'AuthenticationRequired' });
-  }
-  const [type, token] = authHeader.split(' ');
-  const jwtToken = (type === 'Bearer' || type === 'DPoP') ? token : type;
-  
-  if (!jwtToken) {
-    console.log(`Auth failed: Empty token for ${req.url}`);
-    return res.status(401).json({ error: 'AuthenticationRequired', message: 'Token missing' });
-  }
-  
-  if (type === 'DPoP') {
-    const { jkt } = await validateDpop(req, jwtToken);
-    const payload = verifyToken(jwtToken);
-    if (!payload || payload.cnf?.jkt !== jkt) {
-      return res.status(401).json({ error: 'InvalidToken', message: 'DPoP binding mismatch' });
-    }
-    req.auth = payload;
-    return next();
-  }
-
-  const payload = verifyToken(jwtToken);
-  if (!payload) {
-    console.log(`Auth failed: Invalid token for ${req.url}`);
-    return res.status(401).json({ error: 'InvalidToken' });
-  }
-  req.auth = payload;
-  next();
-};
 
 // --- Endpoints ---
 app.get('/.well-known/atproto-did', async (req, res) => {
@@ -262,8 +228,8 @@ app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
   const user = req.user;
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
   
-  const accessJwt = createToken(req.auth.sub, req.auth.handle);
-  res.json({ accessJwt, refreshJwt: accessJwt, handle: req.auth.handle, did: req.auth.sub });
+  const accessJwt = createToken(user.auth.sub, user.auth.handle);
+  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.auth.handle, did: user.auth.sub });
 });
 
 app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
@@ -300,8 +266,8 @@ app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
 app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
   const didDoc = await getDidDoc(req, req.user.host);
   res.json({ 
-    handle: req.auth.handle, 
-    did: req.auth.sub,
+    handle: req.user.auth.handle, 
+    did: req.user.auth.sub,
     email: req.user.email,
     emailConfirmed: true,
     active: true,
@@ -313,7 +279,7 @@ app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
 app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
   const prefsRes = await db.execute({
     sql: 'SELECT value FROM preferences WHERE key = ?',
-    args: [`prefs:${req.auth.sub}`]
+    args: [`prefs:${req.user.auth.sub}`]
   });
   const prefsJson = prefsRes.rows[0]?.value;
   let preferences = prefsJson ? JSON.parse(prefsJson) : [];
@@ -337,13 +303,13 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   if (personalDetailsPref?.birthDate) {
       await db.execute({
           sql: "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
-          args: [`birthDate:${req.auth.sub}`, personalDetailsPref.birthDate]
+          args: [`birthDate:${req.user.auth.sub}`, personalDetailsPref.birthDate]
       });
   }
 
   await db.execute({
     sql: "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
-    args: [`prefs:${req.auth.sub}`, JSON.stringify(preferences)]
+    args: [`prefs:${req.user.auth.sub}`, JSON.stringify(preferences)]
   });
   res.json({});
 });
