@@ -621,6 +621,8 @@ app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
     did: req.auth.sub,
     email: process.env.EMAIL || `pds@${req.auth.handle}`,
     emailConfirmed: true,
+    active: true,
+    status: 'active',
     didDoc
   });
 });
