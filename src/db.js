@@ -11,6 +11,17 @@ export const createDb = (url, authToken) => {
 };
 
 export async function initDb(client) {
+  // Transparent migration: rename system_state to preferences if it exists
+  try {
+    const check = await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_state'");
+    if (check.rows.length > 0) {
+      console.log('Migrating system_state table to preferences...');
+      await client.execute("ALTER TABLE system_state RENAME TO preferences");
+    }
+  } catch (e) {
+    // Ignore errors (e.g. table already renamed or doesn't exist)
+  }
+
   await client.batch([
     `CREATE TABLE IF NOT EXISTS repo_blocks (
       cid TEXT PRIMARY KEY,
@@ -36,7 +47,7 @@ export async function initDb(client) {
       event BLOB NOT NULL,
       time TEXT NOT NULL
     )`,
-    `CREATE TABLE IF NOT EXISTS system_state (
+    `CREATE TABLE IF NOT EXISTS preferences (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )`,

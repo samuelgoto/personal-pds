@@ -71,10 +71,10 @@ app.get('/favicon.ico', (req, res) => {
 });
 
 // Helper to get system state
-export const getSystemMeta = async (key) => {
+export const getPreference = async (key) => {
   try {
     const res = await db.execute({
-      sql: 'SELECT value FROM system_state WHERE key = ?',
+      sql: 'SELECT value FROM preferences WHERE key = ?',
       args: [key]
     });
     return res.rows.length > 0 ? res.rows[0].value : null;
@@ -320,7 +320,7 @@ app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
     const user = req.user;
     if (!user) return res.status(404).json({ error: 'UserNotFound' });
     
-    const birthDate = await getSystemMeta(`birthDate:${user.did}`) || process.env.BIRTHDATE || '1990-01-01';
+    const birthDate = await getPreference(`birthDate:${user.did}`) || process.env.BIRTHDATE || '1990-01-01';
     const email = process.env.EMAIL || `pds@${user.handle}`;
 
     res.json({
@@ -372,7 +372,7 @@ app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
 
 app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
   try {
-    const prefsJson = await getSystemMeta(`prefs:${req.auth.sub}`);
+    const prefsJson = await getPreference(`prefs:${req.auth.sub}`);
     let preferences = prefsJson ? JSON.parse(prefsJson) : [];
     
     // ATProto nuance: PDS is the source of truth for user preferences
@@ -397,13 +397,13 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
     const personalDetailsPref = preferences.find(p => p.$type === 'app.bsky.actor.defs#personalDetailsPref');
     if (personalDetailsPref?.birthDate) {
         await db.execute({
-            sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+            sql: "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
             args: [`birthDate:${req.auth.sub}`, personalDetailsPref.birthDate]
         });
     }
 
     await db.execute({
-      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+      sql: "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
       args: [`prefs:${req.auth.sub}`, JSON.stringify(preferences)]
     });
     res.json({});

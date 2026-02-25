@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
 import { cborDecode, lastRelayPing } from './util.js';
-import { getHost, getSystemMeta } from './server.js';
+import { getHost, getPreference } from './server.js';
 
 const router = express.Router();
 
