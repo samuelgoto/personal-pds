@@ -32,7 +32,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
 
   beforeAll(async () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(console, 'error').mockImplementation(() => {});
+    // jest.spyOn(console, 'error').mockImplementation(() => {});
     process.env.PASSWORD = 'relay-pass';
     process.env.DOMAIN = HOST;
     const dbName = `relay-${Date.now()}.db`;
