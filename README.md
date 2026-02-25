@@ -66,12 +66,25 @@ The PDS uses a streamlined schema for repository data, identity, and OAuth state
 
 ## Setup & Deployment
 
-### 1. Environment Configuration
-Required variables: `HANDLE`, `PDS_DID`, `PRIVATE_KEY`, `PASSWORD`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`.
-
-### 2. Initialization
+### 1. Generate a Private Key
+Run the following command to generate a valid Secp256k1 private key for your PDS:
 ```bash
-node scripts/run-setup.js
+npm run gen-key
+```
+
+### 2. Environment Configuration
+Create a `.env` file and populate it with the values generated above, along with your other details:
+- `HANDLE`: Your PDS domain (e.g., `pds.your-domain.com`).
+- `PDS_DID`: Your primary account DID (from `gen-key` or a registered `did:plc`).
+- `PRIVATE_KEY`: Your generated private key.
+- `PASSWORD`: Your PDS login password.
+- `TURSO_DATABASE_URL`: Your Turso connection string.
+- `TURSO_AUTH_TOKEN`: Your Turso auth token.
+
+### 3. Initialization
+Initialization happens automatically on the first run of the server.
+```bash
+npm start
 ```
 
 ### 3. Testing
