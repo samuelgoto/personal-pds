@@ -53,6 +53,16 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// --- PDS User Context Middleware ---
+app.use(async (req, res, next) => {
+  try {
+    req.user = await getSingleUser(req);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.use(oauth);
 
 // --- Generic XRPC Proxy Middleware (Fallthrough) ---
@@ -104,14 +114,16 @@ const resolveServiceEndpoint = async (didWithFragment) => {
 };
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
-  const pdsDid = (process.env.PDS_DID || '').trim();
+  const user = req.user;
+  const pdsDid = user?.did || (process.env.PDS_DID || '').trim();
   console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
   res.json({ availableUserDomains: [], did: pdsDid });
 });
 
 app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
+  const user = req.user;
   res.json({
-    did: (process.env.PDS_DID || '').trim(),
+    did: user?.did || (process.env.PDS_DID || '').trim(),
     endpoint: `https://${getHost(req)}`
   });
 });
@@ -197,7 +209,7 @@ const auth = async (req, res, next) => {
       if (!payload || payload.cnf?.jkt !== jkt) {
         return res.status(401).json({ error: 'InvalidToken', message: 'DPoP binding mismatch' });
       }
-      req.user = payload;
+      req.auth = payload;
       return next();
     } catch (err) {
       console.log(`Auth failed: DPoP error for ${req.url}: ${err.message}`);
@@ -210,7 +222,7 @@ const auth = async (req, res, next) => {
     console.log(`Auth failed: Invalid token for ${req.url}`);
     return res.status(401).json({ error: 'InvalidToken' });
   }
-  req.user = payload;
+  req.auth = payload;
   next();
 };
 
@@ -233,9 +245,9 @@ app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, r
   });
 });
 
-// --- Dashboard ---
+// --- Endpoints ---
 app.get('/', async (req, res) => {
-  const user = await getSingleUser(req);
+  const user = req.user;
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
   const lastPing = await getSystemMeta('last_relay_ping');
@@ -502,7 +514,7 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const { handle } = req.query;
-  const user = await getSingleUser(req);
+  const user = req.user;
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
 
   // Only resolve locally if the handle EXACTLY matches our domain or is empty/self
@@ -532,7 +544,7 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
 });
 app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   const { identifier, password } = req.body;
-  const user = await getSingleUser(req);
+  const user = req.user;
   if (!user) {
     console.log('Login failed: Server not initialized (no user)');
     return res.status(500).json({ error: 'ServerNotInitialized' });
@@ -552,7 +564,7 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
 });
 
 app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
-  const user = await getSingleUser(req);
+  const user = req.user;
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
   
   const accessJwt = createToken(user.did, user.handle);
@@ -561,7 +573,7 @@ app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
 
 app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
   try {
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user) return res.status(404).json({ error: 'UserNotFound' });
     
     const birthDate = await getSystemMeta(`birthDate:${user.did}`) || process.env.BIRTHDATE || '1990-01-01';
@@ -581,7 +593,7 @@ app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
 
 app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
   try {
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user) {
       return res.status(404).json({ error: 'UserNotFound', message: 'User or Repository not initialized' });
     }
@@ -601,13 +613,13 @@ app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
-  res.json({ handle: req.user.handle, did: req.user.sub });
+  res.json({ handle: req.auth.handle, did: req.auth.sub });
 });
 
 app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
   try {
     const { repo, collection, record, rkey } = req.body;
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
     // ATProto nuance: records from clients often have CID strings. 
@@ -671,7 +683,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
 app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
   try {
     const { repo, collection, rkey, record } = req.body;
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
     const fixedRecord = fixCids(record);
@@ -724,7 +736,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
 app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
   try {
     const { repo, collection, rkey } = req.body;
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
     const storage = new TursoStorage();
@@ -761,7 +773,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
 app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
   try {
     const { repo, writes, swapCommit } = req.body;
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
     const storage = new TursoStorage();
@@ -823,7 +835,7 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
 
 app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
   try {
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user) return res.status(403).json({ error: 'InvalidRepo' });
 
     const content = req.body;
@@ -873,8 +885,8 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
 });
 
 // Helper to get a single record from the local repo
-const getRecordHelper = async (repo, collection, rkey) => {
-  const user = await getSingleUser(); 
+const getRecordHelper = async (repo, collection, rkey, userContext = null) => {
+  const user = userContext || await getSingleUser(); 
   if (!user) {
     console.log('[HELPER] No user found');
     return null;
@@ -907,7 +919,7 @@ const getRecordHelper = async (repo, collection, rkey) => {
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
   try {
     const { repo, collection, limit, cursor } = req.query;
-    const user = await getSingleUser();
+    const user = req.user;
     if (!user || (repo.toLowerCase() !== user.did.toLowerCase() && repo.toLowerCase() !== user.handle.toLowerCase())) {
         return res.status(404).json({ error: 'RepoNotFound' });
     }
@@ -938,17 +950,17 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
 
 app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
   const { repo, collection, rkey } = req.query;
-  const record = await getRecordHelper(repo, collection, rkey);
+  const record = await getRecordHelper(repo, collection, rkey, req.user);
   
   if (!record) return res.status(404).json({ error: 'RecordNotFound' });
   
-  const user = await getSingleUser(req);
+  const user = req.user;
   res.json({ uri: `at://${user.did}/${collection}/${rkey}`, value: record.value, cid: record.cid });
 });
 
 app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
     const { repo } = req.query;
-    const user = await getSingleUser(req);
+    const user = req.user;
     if (!user || (repo !== user.did && repo !== user.handle)) {
         return res.status(404).json({ error: 'RepoNotFound' });
     }
@@ -999,7 +1011,8 @@ app.head('/xrpc/com.atproto.sync.getHead', (req, res) => res.status(200).end());
 app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   try {
     const { did } = req.query;
-    const pdsDid = (process.env.PDS_DID || '').trim();
+    const user = req.user;
+    const pdsDid = user?.did;
     console.log(`[SYNC] getHead: requested=${did}, authoritative=${pdsDid}`);
     if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) {
         console.log(`[SYNC] getHead: DID mismatch: ${did} !== ${pdsDid}`);
@@ -1023,7 +1036,8 @@ app.head('/xrpc/com.atproto.sync.getLatestCommit', (req, res) => res.status(200)
 app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   try {
     const { did } = req.query;
-    const pdsDid = (process.env.PDS_DID || '').trim();
+    const user = req.user;
+    const pdsDid = user?.did;
     console.log(`TAP getLatestCommit: did=${did}, pdsDid=${pdsDid}`);
     if (did && pdsDid && did !== pdsDid) {
         console.log(`TAP getLatestCommit: DID mismatch: ${did} !== ${pdsDid}`);
@@ -1058,7 +1072,8 @@ app.get('/xrpc/_health', (req, res) => {
 app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
   try {
     const { did } = req.query;
-    const pdsDid = (process.env.PDS_DID || '').trim();
+    const user = req.user;
+    const pdsDid = user?.did;
     if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) {
       return res.status(404).json({ error: 'RepoNotFound' });
     }
@@ -1086,7 +1101,8 @@ app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
   try {
-    const pdsDid = (process.env.PDS_DID || '').trim();
+    const user = req.user;
+    const pdsDid = user?.did;
     const rootCid = await getRootCid();
     if (!pdsDid || !rootCid) {
         console.log(`TAP listRepos: PDS_DID or Root CID not found`);
@@ -1116,7 +1132,8 @@ app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
 app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
   try {
     const { did, cids } = req.query;
-    const pdsDid = (process.env.PDS_DID || '').trim();
+    const user = req.user;
+    const pdsDid = user?.did;
     if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
 
     const storage = new TursoStorage();
@@ -1139,7 +1156,8 @@ app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
   const { did, since } = req.query;
-  const pdsDid = (process.env.PDS_DID || '').trim();
+  const user = req.user;
+  const pdsDid = user?.did;
   if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();
@@ -1155,7 +1173,8 @@ app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
   const { did } = req.query;
-  const pdsDid = (process.env.PDS_DID || '').trim();
+  const user = req.user;
+  const pdsDid = user?.did;
   if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();

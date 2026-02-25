@@ -4,7 +4,7 @@ import { createAccessToken, createIdToken, validateDpop, verifyToken } from './a
 import { createHash, randomBytes, createECDH } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
-import { getHost, getSingleUser, getDidDoc } from './server.js';
+import { getHost, getDidDoc } from './server.js';
 
 const router = express.Router();
 
@@ -79,9 +79,9 @@ router.get('/oauth/authorize', async (req, res) => {
 
 router.post('/oauth/authorize', async (req, res) => {
   const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode, password } = req.body;
-  const user = await getSingleUser(req);
+  const user = req.user;
 
-  if (password !== user.password) {
+  if (!user || password !== user.password) {
     return res.status(401).send('Invalid password');
   }
 
@@ -114,7 +114,7 @@ router.post('/oauth/authorize', async (req, res) => {
 router.post('/oauth/token', async (req, res) => {
   try {
     const { grant_type, code, redirect_uri, client_id, refresh_token, code_verifier } = req.body;
-    const user = await getSingleUser(req);
+    const user = req.user;
     const host = getHost(req);
     const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
     const issuer = `${protocol}://${host}`;
