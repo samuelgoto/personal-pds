@@ -151,21 +151,6 @@ const proxyRequest = async (req, res, targetUrl) => {
   }
 };
 
-// Explicit proxying via atproto-proxy header (MUST be defined before local routes)
-app.all(/^\/xrpc\/.*/, async (req, res, next) => {
-  const proxyTargetDid = req.headers['atproto-proxy'];
-  if (!proxyTargetDid) return next();
-  
-  console.log(`[PROXY] Explicit request to proxy to ${proxyTargetDid}`);
-  const resolvedEndpoint = await resolveServiceEndpoint(proxyTargetDid);
-  if (resolvedEndpoint) {
-      return await proxyRequest(req, res, resolvedEndpoint);
-  } else {
-      console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
-      return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
-  }
-});
-
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const pdsDid = (process.env.PDS_DID || '').trim();
   console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
@@ -1190,12 +1175,12 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
+app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
   try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
     if (!user || (actor !== user.did && actor !== user.handle)) {
-        return res.status(404).json({ error: 'ProfileNotFound' });
+        return next();
     }
 
     const storage = new TursoStorage();
@@ -1230,10 +1215,17 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
+app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res, next) => {
   try {
     const actors = Array.isArray(req.query.actors) ? req.query.actors : [req.query.actors];
     const user = await getSingleUser(req);
+    
+    // If any actor is not us, let the proxy handle the whole batch
+    const isAllLocal = actors.every(a => a === user?.did || a === user?.handle);
+    if (!isAllLocal) {
+        return next();
+    }
+
     const profiles = [];
 
     if (user) {
@@ -1342,11 +1334,11 @@ const fetchExternalPost = async (req, uri) => {
   }
 };
 
-const getAuthorFeed = async (req, res, actor, limit) => {
+const getAuthorFeed = async (req, res, next, actor, limit) => {
   try {
     const user = await getSingleUser(req);
     if (!user || (actor !== user.did && actor !== user.handle)) {
-        return res.json({ feed: [] });
+        return next();
     }
 
     const storage = new TursoStorage();
@@ -1402,14 +1394,14 @@ const getAuthorFeed = async (req, res, actor, limit) => {
   }
 };
 
-app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res) => {
-  return getAuthorFeed(req, res, req.query.actor, req.query.limit);
+app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res, next) => {
+  return getAuthorFeed(req, res, next, req.query.actor, req.query.limit);
 });
 
-app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res, next) => {
   const host = getHost(req);
   const userDid = formatDid(host);
-  return getAuthorFeed(req, res, userDid, req.query.limit);
+  return getAuthorFeed(req, res, next, userDid, req.query.limit);
 });
 
 app.get('/xrpc/app.bsky.feed.getFeed', auth, async (req, res) => {
@@ -1467,7 +1459,7 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
   }
 });
 
-const getPostThread = async (req, res, uri, isV2 = false) => {
+const getPostThread = async (req, res, next, uri, isV2 = false) => {
   try {
     const user = await getSingleUser(req);
     if (!user) return res.status(404).json({ error: 'PostNotFound' });
@@ -1477,7 +1469,7 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
     const isLocalDid = canonicalUri.startsWith(`at://${user.did}`);
 
     if (!isLocalDid) {
-        return res.status(404).json({ error: 'PostNotFound' });
+        return next();
     }
 
     const parts = canonicalUri.replace('at://', '').split('/');
@@ -1643,19 +1635,24 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
   }
 };
 
-app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res) => {
-  return getPostThread(req, res, req.query.uri, false);
+app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res, next) => {
+  return getPostThread(req, res, next, req.query.uri, false);
 });
 
-app.get('/xrpc/app.bsky.unspecced.getPostThreadV2', async (req, res) => {
-  return getPostThread(req, res, req.query.anchor, true);
+app.get('/xrpc/app.bsky.unspecced.getPostThreadV2', async (req, res, next) => {
+  return getPostThread(req, res, next, req.query.anchor, true);
 });
 
-app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
+app.get('/xrpc/app.bsky.graph.getFollows', async (req, res, next) => {
   try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
     
+    // Fall through if not local
+    if (user && actor !== user.did && actor !== user.handle) {
+        return next();
+    }
+
     let profile = undefined;
     if (user && (actor === user.did || actor === user.handle)) {
         profile = {
@@ -1674,52 +1671,70 @@ app.get('/xrpc/app.bsky.graph.getFollows', async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res) => {
+app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res, next) => {
+  const { actor } = req.query;
+  const user = await getSingleUser(req);
+  if (user && actor !== user.did && actor !== user.handle) {
+      return next();
+  }
   res.json({ followers: [] });
 });
 
-app.get('/xrpc/app.bsky.graph.getSuggestedFollowsByActor', async (req, res) => {
+app.get('/xrpc/app.bsky.graph.getSuggestedFollowsByActor', async (req, res, next) => {
+  const { actor } = req.query;
+  const user = await getSingleUser(req);
+  if (user && actor !== user.did && actor !== user.handle) {
+      return next();
+  }
   res.json({ suggestions: [] });
 });
 
-app.get('/xrpc/app.bsky.graph.getMutes', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.graph.getMutes', auth, async (req, res, next) => {
+  // Since mutes/blocks are personal to the logged-in user, we always handle locally
   res.json({ mutes: [] });
 });
 
-app.get('/xrpc/app.bsky.graph.getBlocks', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.graph.getBlocks', auth, async (req, res, next) => {
   res.json({ blocks: [] });
 });
 
-app.get('/xrpc/app.bsky.actor.getSuggestions', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.actor.getSuggestions', auth, async (req, res, next) => {
+  // Global suggestions are better handled by the AppView if requested
+  if (req.headers['atproto-proxy']) return next();
   res.json({ actors: [] });
 });
 
-app.get('/xrpc/app.bsky.notification.getUnreadCount', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.notification.getUnreadCount', auth, async (req, res, next) => {
   res.json({ count: 0 });
 });
 
 
-app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res) => {
+app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res, next) => {
   res.json({});
 });
 
-app.get('/xrpc/app.bsky.labeler.getServices', async (req, res) => {
+app.get('/xrpc/app.bsky.labeler.getServices', async (req, res, next) => {
+  if (req.headers['atproto-proxy']) return next();
   res.json({ views: [] });
 });
 
-app.get('/xrpc/app.bsky.ageassurance.getState', async (req, res) => {
+app.get('/xrpc/app.bsky.ageassurance.getState', async (req, res, next) => {
   res.json({ status: 'verified' });
 });
 
-app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res) => {
+app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res, next) => {
+  if (req.headers['atproto-proxy']) return next();
   res.json({ logs: [] });
 });
 
-app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res) => {
+app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res, next) => {
+  if (req.headers['atproto-proxy']) return next();
   res.json({ convos: [] });
 });
 
-app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res, next) => {
+  // If the app wants proxied notifications, let it pass through
+  if (req.headers['atproto-proxy']) return next();
   res.json({ 
     notifications: [], 
     cursor: undefined,
@@ -2115,6 +2130,21 @@ app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
 
   res.setHeader('Content-Type', 'application/vnd.ipld.car');
   res.send(Buffer.from(car));
+});
+
+// Explicit proxying via atproto-proxy header (Fallthrough)
+app.all(/^\/xrpc\/.*/, async (req, res, next) => {
+  const proxyTargetDid = req.headers['atproto-proxy'];
+  if (!proxyTargetDid) return next();
+  
+  console.log(`[PROXY] Explicit request to proxy to ${proxyTargetDid} (Fallthrough)`);
+  const resolvedEndpoint = await resolveServiceEndpoint(proxyTargetDid);
+  if (resolvedEndpoint) {
+      return await proxyRequest(req, res, resolvedEndpoint);
+  } else {
+      console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
+      return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
+  }
 });
 
 export default app;
