@@ -1176,7 +1176,6 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
 });
 
 app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
-  try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
     if (!user || (actor !== user.did && actor !== user.handle)) {
@@ -1207,7 +1206,6 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
         followsCount: Math.max(localFollows, global.followsCount),
         postsCount: Math.max(localPosts, global.postsCount),
         associated: {
-
             activitySubscription: { allowSubscriptions: 'followers' }
         },
         viewer: {
@@ -1218,14 +1216,10 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
         createdAt: repoCreatedAt,
         indexedAt: new Date().toISOString(),
     });
-  } catch (err) {
-    console.error('Error in getProfile:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 });
 
+
 app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res, next) => {
-  try {
     const actors = Array.isArray(req.query.actors) ? req.query.actors : [req.query.actors];
     const user = await getSingleUser(req);
     
@@ -1281,10 +1275,6 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res, next) => {
     }
 
     res.json({ profiles });
-  } catch (err) {
-    console.error('Error in getProfiles:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 });
 
 app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
@@ -1543,7 +1533,6 @@ const hydratePostView = async (repoObj, user, req, rec, likesMap, repostsMap, qu
 };
 
 const getAuthorFeed = async (req, res, next, actor, limit) => {
-  try {
     const user = await getSingleUser(req);
     if (!user || (actor !== user.did && actor !== user.handle)) {
         return next();
@@ -1626,10 +1615,6 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
     res.json({ 
         feed: feed.slice(0, parseInt(limit || '50', 10)),
     });
-  } catch (err) {
-    console.error('Error in getAuthorFeed:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 };
 
 app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res, next) => {
@@ -1698,7 +1683,6 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
 });
 
 const getPostThread = async (req, res, next, uri, isV2 = false) => {
-  try {
     const user = await getSingleUser(req);
     if (!user) return res.status(404).json({ error: 'PostNotFound' });
 
@@ -1716,7 +1700,7 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
 
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    
+
     const recordCid = await repoObj.data.get(`${collection}/${rkey}`);
     const record = await repoObj.getRecord(collection, rkey);
 
@@ -1729,20 +1713,20 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     const likesMap = await getLikesForPosts(repoObj, user.did);
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
     const quotesMap = await getQuotesForPosts(repoObj);
-    
+
     // Find replies in the repository
     const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
     const directReplies = [];
     console.log(`[THREAD] Searching for replies to: ${canonicalUri} (from original: ${uri})`);
-    
+
     for (const entry of allPostEntries) {
         if (!entry.k) continue; // Safety check
         const postRkey = entry.k.split('/').pop();
         if (postRkey === rkey) continue; // Skip the anchor post itself
-        
+
         const postRecord = await repoObj.getRecord('app.bsky.feed.post', postRkey);
         const parentUri = postRecord?.reply?.parent?.uri;
-        
+
         if (parentUri) {
             // Canonicalize the parent URI from the record for comparison
             const canonicalParentUri = parentUri.replace(`at://${user.handle}`, `at://${user.did}`);
@@ -1846,12 +1830,7 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
             threadContext: {},
         }
     });
-  } catch (err) {
-    console.error('Error in getPostThread:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 };
-
 app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res, next) => {
   return getPostThread(req, res, next, req.query.uri, false);
 });
@@ -1861,7 +1840,6 @@ app.get('/xrpc/app.bsky.unspecced.getPostThreadV2', async (req, res, next) => {
 });
 
 app.get('/xrpc/app.bsky.graph.getFollows', async (req, res, next) => {
-  try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
     const targetDid = req.headers['atproto-proxy'] || 'did:web:api.bsky.app#bsky_appview';
@@ -1911,14 +1889,9 @@ app.get('/xrpc/app.bsky.graph.getFollows', async (req, res, next) => {
         follows: globalFollows,
         subject: subject,
     });
-  } catch (err) {
-    console.error('Error in getFollows:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 });
 
 app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res, next) => {
-  try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
     
@@ -1935,10 +1908,6 @@ app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res, next) => {
     });
 
     res.status(response.status).send(response.data);
-  } catch (err) {
-    console.error('Error in getFollowers:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 });
 
 app.get('/xrpc/app.bsky.graph.getSuggestedFollowsByActor', async (req, res, next) => {
@@ -2090,7 +2059,6 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
 });
 
 app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
-  try {
     const { uris } = req.query;
     const requestedUris = Array.isArray(uris) ? uris : [uris];
     const user = await getSingleUser(req);
@@ -2140,10 +2108,6 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
     }
 
     res.json({ posts });
-  } catch (err) {
-    console.error('Error in getPosts:', err);
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 });
 
 app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
@@ -2157,7 +2121,6 @@ app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
-  try {
     const { repo } = req.query;
     const user = await getSingleUser(req);
     if (!user || (repo !== user.did && repo !== user.handle)) {
@@ -2180,9 +2143,6 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
         ],
         handleIsCorrect: true,
     });
-  } catch (err) {
-    res.status(500).json({ error: 'InternalServerError' });
-  }
 });
 
 app.get('/xrpc/com.atproto.sync.getRecord', async (req, res) => {
@@ -2383,7 +2343,7 @@ app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
   res.send(Buffer.from(car));
 });
 
-// Explicit proxying via atproto-proxy header (Fallthrough)
+// --- Generic XRPC Proxy Middleware (Fallthrough) ---
 app.all(/^\/xrpc\/.*/, async (req, res, next) => {
   const proxyTargetDid = req.headers['atproto-proxy'];
   if (!proxyTargetDid) return next();
@@ -2396,6 +2356,29 @@ app.all(/^\/xrpc\/.*/, async (req, res, next) => {
       console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
       return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
   }
+});
+
+// --- 404 Catch-all ---
+app.use((req, res, next) => {
+  res.status(404).json({
+    error: 'MethodNotFound',
+    message: `The method ${req.path} does not exist.`
+  });
+});
+
+// --- Global Error Handler ---
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  console.error('[GLOBAL_ERROR]', err.stack || err);
+  
+  const statusCode = err.status || err.statusCode || 500;
+  res.status(statusCode).json({
+    error: (err.name && err.name !== 'Error') ? err.name : 'InternalServerError',
+    message: err.message || 'An unexpected error occurred'
+  });
 });
 
 export default app;
