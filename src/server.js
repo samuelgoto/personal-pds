@@ -13,6 +13,7 @@ import { cborEncode, cborDecode, formatDid, createTid, createBlobCid, fixCids } 
 import oauth from './oauth.js';
 
 const app = express();
+app.set('trust proxy', true);
 export const wss = new WebSocketServer({ noServer: true });
 
 // Unify WebSocket handling via Sequencer
@@ -40,12 +41,6 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
-  next();
-});
-
-// 2. Logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
   next();
 });
 
@@ -1199,8 +1194,6 @@ app.all(/^\/xrpc\/.*/, async (req, res, next) => {
     console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
     return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
   }
-
-  console.log(`[PROXY] Proxying ${method} to ${proxyTargetDid} (${targetUrl})`);
 
   // Identify user for Service Auth 'sub' claim
   const userDid = verifyToken(req.headers.authorization?.split(' ')[1])?.sub;

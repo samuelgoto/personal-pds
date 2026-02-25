@@ -108,6 +108,7 @@ router.post('/oauth/authorize', async (req, res) => {
     params.forEach((v, k) => url.searchParams.set(k, v));
   }
   
+  console.log(`[OAUTH] Redirecting to ${url.toString()}`);
   res.redirect(url.toString());
 });
 
