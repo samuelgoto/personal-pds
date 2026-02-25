@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
 import { createToken, verifyToken, createAccessToken, createIdToken, validateDpop, getJkt } from './auth.js';
-import { TursoStorage, getRootCid } from './repo.js';
+import { TursoStorage, getRootCid, maybeInitRepo } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
 import { createHash, randomBytes, createPublicKey, createECDH } from 'crypto';
@@ -327,7 +327,13 @@ const getSingleUser = async (req = null) => {
     throw new Error('PASSWORD environment variable is not set');
   }
   
-  const root_cid = await getRootCid();
+  let root_cid = await getRootCid();
+  if (!root_cid) {
+    console.log('No repository found. Auto-initializing...');
+    await maybeInitRepo();
+    root_cid = await getRootCid();
+  }
+  
   if (!root_cid) return null;
 
   return {
