@@ -6,7 +6,6 @@ import nock from 'nock';
 import app, { wss } from '../src/server.js';
 import { createDb, setDb } from '../src/db.js';
 import { sequencer } from '../src/sequencer.js';
-import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -36,7 +35,7 @@ describe('ATProto XRPC Lexicon Compliance', () => {
     setDb(testDb);
 
     await runFullSetup({ db: testDb, skipPlc: true });
-    userDid = formatDid(`localhost`);
+    userDid = process.env.PDS_DID;
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(PORT, resolve));

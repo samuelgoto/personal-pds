@@ -10,7 +10,6 @@ import * as crypto from '@atproto/crypto';
 import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import { readCarWithRoot } from '@atproto/repo';
-import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -41,7 +40,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
     setDb(testDb);
 
     await runFullSetup({ db: testDb, skipPlc: true });
-    userDid = formatDid(`localhost`); // Server strips port
+    userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {

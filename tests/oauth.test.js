@@ -6,7 +6,6 @@ import app, { wss } from '../src/server.js';
 import { initDb, createDb, setDb } from '../src/db.js';
 import { sequencer } from '../src/sequencer.js';
 import * as cryptoAtp from '@atproto/crypto';
-import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -81,7 +80,7 @@ describe('ATProto OAuth Implementation Tests', () => {
     setDb(testDb);
 
     await runFullSetup({ db: testDb, skipPlc: true });
-    userDid = formatDid(process.env.HANDLE);
+    userDid = process.env.PDS_DID;
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(PORT, resolve));

@@ -61,12 +61,6 @@ export function cborDecode(bytes) {
   return dagCbor.decode(bytes);
 }
 
-export function formatDid(hostname) {
-  if (process.env.PDS_DID) {
-    return process.env.PDS_DID.trim();
-  }
-  throw new Error('PDS_DID environment variable is required for did:plc identity.');
-}
 
 export function createTid() {
   return TID.nextStr();

@@ -9,7 +9,7 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, formatDid, createTid, createBlobCid, fixCids } from './util.js';
+import { cborEncode, cborDecode, createTid, createBlobCid, fixCids } from './util.js';
 import oauth from './oauth.js';
 import admin from './admin.js';
 import proxy from './proxy.js';
@@ -39,9 +39,13 @@ app.use(express.urlencoded({ extended: true }));
 // --- PDS User Context Middleware ---
 app.use(async (req, res, next) => {
   const handle = process.env.HANDLE || 'localhost.test';
-  const did = (process.env.PDS_DID || formatDid(handle.split(':')[0])).trim();
+  const did = process.env.PDS_DID?.trim();
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
+  
+  if (!did) {
+    throw new Error('PDS_DID environment variable is not set');
+  }
   
   if (!password) {
     throw new Error('PASSWORD environment variable is not set');
@@ -159,7 +163,8 @@ app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, r
 });
 
 export const getDidDoc = async (req, host) => {
-  const pdsDid = (process.env.PDS_DID || formatDid(host)).trim();
+  const pdsDid = process.env.PDS_DID?.trim();
+  if (!pdsDid) return null;
   const privKeyHex = process.env.PRIVATE_KEY;
   if (!privKeyHex) return null;
 

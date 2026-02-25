@@ -12,7 +12,6 @@ import { db as defaultDb, initDb } from './db.js';
 import { TursoStorage, loadRepo, getRootCid, maybeInitRepo } from './repo.js';
 import { sequencer } from './sequencer.js';
 import { blocksToCarFile, WriteOpAction } from '@atproto/repo';
-import { formatDid } from './util.js';
 
 export async function runFullSetup(options = {}) {
   const {

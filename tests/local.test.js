@@ -9,7 +9,6 @@ import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
 import { maybeInitRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
-import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

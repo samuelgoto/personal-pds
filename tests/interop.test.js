@@ -8,7 +8,6 @@ import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
 import { maybeInitRepo } from '../src/repo.js';
 import { readCarWithRoot } from '@atproto/repo';
-import { formatDid } from '../src/util.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -37,7 +36,7 @@ describe('PDS Interoperability Tests', () => {
     setDb(testDb);
 
     await runFullSetup({ db: testDb, skipPlc: true });
-    userDid = formatDid(`localhost`); // Server strips port
+    userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {

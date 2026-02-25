@@ -2,7 +2,7 @@ import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile, WriteOpAction } fr
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
-import { cborDecode, cborEncode, formatDid, createBlobCid, fixCids } from './util.js';
+import { cborDecode, cborEncode, createBlobCid, fixCids } from './util.js';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
@@ -128,7 +128,7 @@ export async function maybeInitRepo() {
 
   const privKeyHex = process.env.PRIVATE_KEY;
   const domain = (process.env.HANDLE || 'localhost:3000').split(':')[0];
-  const did = (process.env.PDS_DID || formatDid(domain)).trim();
+  const did = (process.env.PDS_DID || process.env.PDS_DID).trim();
   
   if (!privKeyHex) {
     console.log('PRIVATE_KEY not found. Skipping repo auto-init.');
