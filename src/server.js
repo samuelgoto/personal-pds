@@ -196,7 +196,12 @@ const auth = async (req, res, next) => {
     return res.status(401).json({ error: 'AuthenticationRequired' });
   }
   const [type, token] = authHeader.split(' ');
-  const jwtToken = token || type; // Handle both "Bearer <token>" and just "<token>"
+  const jwtToken = (type === 'Bearer' || type === 'DPoP') ? token : type;
+  
+  if (!jwtToken) {
+    console.log(`Auth failed: Empty token for ${req.url}`);
+    return res.status(401).json({ error: 'AuthenticationRequired', message: 'Token missing' });
+  }
   
   if (type === 'DPoP') {
     try {
@@ -609,7 +614,15 @@ app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
-  res.json({ handle: req.auth.handle, did: req.auth.sub });
+  const host = getHost(req);
+  const didDoc = await getDidDoc(req, host);
+  res.json({ 
+    handle: req.auth.handle, 
+    did: req.auth.sub,
+    email: process.env.EMAIL || `pds@${req.auth.handle}`,
+    emailConfirmed: true,
+    didDoc
+  });
 });
 
 app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {

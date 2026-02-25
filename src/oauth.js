@@ -230,7 +230,7 @@ router.get('/.well-known/oauth-authorization-server', async (req, res) => {
     jwks_uri: `${issuer}/.well-known/jwks.json`,
     scopes_supported: ['atproto'],
     response_types_supported: ['code'],
-    response_modes_supported: ['query'],
+    response_modes_supported: ['query', 'fragment'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none', 'client_id_metadata_document', 'private_key_jwt'],
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
