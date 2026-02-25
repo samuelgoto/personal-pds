@@ -29,7 +29,7 @@ Copy `.env.example` to your deployment environment and configure:
 - `DOMAIN`: Your PDS domain (e.g., `pds.sgo.to`).
 - `PDS_DID`: Your primary account DID (e.g., `did:plc:...`).
 - `PRIVATE_KEY`: Your Secp256k1 private key (hex).
-- `DATABASE_URL` & `DATABASE_AUTH_TOKEN`: Your Turso credentials.
+- `TURSO_DATABASE_URL` & `TURSO_AUTH_TOKEN`: Your Turso credentials.
 - `PASSWORD`: Your PDS login password.
 
 ### 3. Run Setup

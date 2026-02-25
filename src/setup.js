@@ -34,7 +34,7 @@ export async function runFullSetup(options = {}) {
     if (fs.existsSync('.env.example')) {
       fs.copyFileSync('.env.example', '.env');
     } else {
-      fs.writeFileSync('.env', `PORT=3000\nDATABASE_URL=file:local.db\n`);
+      fs.writeFileSync('.env', `PORT=3000\nTURSO_DATABASE_URL=file:local.db\n`);
     }
   }
 

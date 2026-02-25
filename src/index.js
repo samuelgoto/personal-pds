@@ -14,9 +14,9 @@ async function initialize() {
   if (!process.env.PASSWORD) {
     throw new Error('PASSWORD environment variable is not set');
   }
-  const dbUrl = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
+  const dbUrl = process.env.TURSO_DATABASE_URL;
   if (!dbUrl) {
-    throw new Error('TURSO_DATABASE_URL or DATABASE_URL environment variable is not set');
+    throw new Error('TURSO_DATABASE_URL environment variable is not set');
   }
   await initDb(db);
   initialized = true;
