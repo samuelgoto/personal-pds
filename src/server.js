@@ -1389,12 +1389,46 @@ const getQuotesForPosts = async (repoObj) => {
   return quotes;
 };
 
+// Helper to fetch global counts from an AppView for a set of URIs
+const fetchGlobalCounts = async (uris) => {
+  if (!uris || uris.length === 0) return new Map();
+  try {
+    const PUBLIC_API = 'https://public.api.bsky.app';
+    console.log(`[HYDRATION] Fetching global counts for ${uris.length} posts...`);
+    const res = await axios.get(`${PUBLIC_API}/xrpc/app.bsky.feed.getPosts`, {
+      params: { uris },
+      timeout: 3000
+    });
+    
+    const globalData = new Map();
+    for (const post of res.data.posts || []) {
+      globalData.set(post.uri, {
+        likeCount: post.likeCount,
+        repostCount: post.repostCount,
+        quoteCount: post.quoteCount,
+        replyCount: post.replyCount
+      });
+    }
+    return globalData;
+  } catch (err) {
+    console.warn(`[HYDRATION] Failed to fetch global counts:`, err.message);
+    return new Map();
+  }
+};
+
 // Helper to hydrate a post with all its metadata and views
-const hydratePostView = async (repoObj, user, req, rec, likesMap, repostsMap, quotesMap) => {
+const hydratePostView = async (repoObj, user, req, rec, likesMap, repostsMap, quotesMap, globalData = null) => {
     const postUri = `at://${user.did}/${rec.collection}/${rec.rkey}`;
     const likeInfo = likesMap.get(postUri) || { count: 0, viewerLike: undefined };
     const repostInfo = repostsMap.get(postUri) || { count: 0, viewerRepost: undefined };
-    const quoteCount = quotesMap.get(postUri) || 0;
+    const localQuoteCount = quotesMap.get(postUri) || 0;
+    
+    // Merge local data with global AppView data
+    const external = globalData?.get(postUri);
+    const likeCount = Math.max(likeInfo.count, external?.likeCount || 0);
+    const repostCount = Math.max(repostInfo.count, external?.repostCount || 0);
+    const quoteCount = Math.max(localQuoteCount, external?.quoteCount || 0);
+    const replyCount = external?.replyCount || 0;
 
     const author = {
         did: user.did,
@@ -1410,9 +1444,9 @@ const hydratePostView = async (repoObj, user, req, rec, likesMap, repostsMap, qu
         cid: rec.cid.toString(),
         author,
         record: rec.record,
-        replyCount: 0, // Simplified
-        repostCount: repostInfo.count,
-        likeCount: likeInfo.count,
+        replyCount: replyCount,
+        repostCount: repostCount,
+        likeCount: likeCount,
         quoteCount: quoteCount,
         indexedAt: rec.record.createdAt || new Date().toISOString(),
         viewer: {
@@ -1472,6 +1506,15 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
     const quotesMap = await getQuotesForPosts(repoObj);
     
+    // Gather all post URIs to fetch global data
+    const postUris = [];
+    for await (const rec of repoObj.walkRecords()) {
+        if (rec.collection === 'app.bsky.feed.post') {
+            postUris.push(`at://${user.did}/${rec.collection}/${rec.rkey}`);
+        }
+    }
+    const globalData = await fetchGlobalCounts(postUris);
+
     const author = {
         did: user.did,
         handle: user.handle,
@@ -1492,7 +1535,7 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
     const feed = [];
     for await (const rec of repoObj.walkRecords()) {
       if (rec.collection === 'app.bsky.feed.post') {
-        const postView = await hydratePostView(repoObj, user, req, rec, likesMap, repostsMap, quotesMap);
+        const postView = await hydratePostView(repoObj, user, req, rec, likesMap, repostsMap, quotesMap, globalData);
         feed.push({ post: postView });
       } else if (rec.collection === 'app.bsky.feed.repost') {
         const subjectUri = rec.record.subject.uri;
@@ -1508,7 +1551,7 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
             const postRecord = await repoObj.getRecord(collection, rkey);
             if (postRecord) {
                 const postRec = { collection, rkey, record: postRecord, cid: subjectCid };
-                const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
+                const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
                 feed.push({
                     post: postView,
                     reason: {
@@ -1636,23 +1679,6 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
     const quotesMap = await getQuotesForPosts(repoObj);
 
-    const author = {
-        did: user.did,
-        handle: user.handle,
-        displayName: profile?.displayName || user.handle,
-        avatar: getBlobUrl(req, profile?.avatar),
-        associated: {
-            activitySubscription: { allowSubscriptions: 'followers' }
-        },
-        viewer: {
-            muted: false,
-            blockedBy: false,
-        },
-        labels: [],
-        createdAt: repoCreatedAt,
-        indexedAt: new Date().toISOString(),
-    };
-
     // Find replies in the repository
     const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
     const directReplies = [];
@@ -1680,10 +1706,32 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
         }
     }
 
+    // Gather URIs for main post and direct replies
+    const threadUris = [canonicalUri];
+    for (const reply of directReplies) threadUris.push(reply.uri);
+    const globalData = await fetchGlobalCounts(threadUris);
+
+    const author = {
+        did: user.did,
+        handle: user.handle,
+        displayName: (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.displayName || user.handle,
+        avatar: getBlobUrl(req, (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.avatar),
+        associated: {
+            activitySubscription: { allowSubscriptions: 'followers' }
+        },
+        viewer: {
+            muted: false,
+            blockedBy: false,
+        },
+        labels: [],
+        createdAt: repoCreatedAt,
+        indexedAt: new Date().toISOString(),
+    };
+
     if (isV2) {
         const postRec = { collection, rkey, record, cid: recordCid };
-        const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
-        postView.replyCount = directReplies.length;
+        const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
+        postView.replyCount = Math.max(directReplies.length, postView.replyCount); // Use whichever is higher
 
         const thread = [
             {
@@ -1704,7 +1752,7 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
         // Add direct replies at depth 1
         for (const reply of directReplies) {
             const replyRec = { collection: 'app.bsky.feed.post', rkey: reply.uri.split('/').pop(), record: reply.record, cid: reply.cid };
-            const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap);
+            const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap, globalData);
             thread.push({
                 uri: reply.uri,
                 depth: 1,
@@ -1725,13 +1773,13 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
 
     // Legacy/Standard V1 structure
     const postRec = { collection, rkey, record, cid: recordCid };
-    const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
-    postView.replyCount = directReplies.length;
+    const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
+    postView.replyCount = Math.max(directReplies.length, postView.replyCount);
 
     const threadReplies = [];
     for (const reply of directReplies) {
         const replyRec = { collection: 'app.bsky.feed.post', rkey: reply.uri.split('/').pop(), record: reply.record, cid: reply.cid };
-        const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap);
+        const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap, globalData);
         threadReplies.push({
             $type: 'app.bsky.feed.defs#threadViewPost',
             post: replyView,
@@ -1962,6 +2010,7 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
     const likesMap = await getLikesForPosts(repoObj, user.did);
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
     const quotesMap = await getQuotesForPosts(repoObj);
+    const globalData = await fetchGlobalCounts(requestedUris);
 
     const author = {
         did: user.did,
@@ -1990,7 +2039,7 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
         const recordRes = await getRecordHelper(repo, collection, rkey);
         if (recordRes) {
             const postRec = { collection, rkey, record: recordRes.value, cid: recordRes.cid };
-            const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
+            const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
             posts.push(postView);
         }
     }
