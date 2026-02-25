@@ -15,7 +15,9 @@ A lightweight, single-user AT Protocol Personal Data Server (PDS) built with Nod
 
 ## Deployment & Setup
 
-This project is optimized for **Heroku** and **Turso**.
+This project requires a **persistent hosting environment** (like Heroku, Railway, or a VPS) that supports long-lived WebSocket connections for the ATProto firehose. 
+
+**Note**: Serverless platforms like Vercel or AWS Lambda are **not supported** because they cannot maintain the persistent WebSocket connection required for `com.atproto.sync.subscribeRepos`, which is essential for being indexed by the Bluesky network.
 
 ### 1. Prerequisites
 - A **Turso** database and auth token.
