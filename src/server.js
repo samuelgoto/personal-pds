@@ -9,7 +9,8 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { createTid, createBlobCid, fixCids, getDidDoc } from './util.js';
+import { createBlobCid, fixCids, getDidDoc } from './util.js';
+import { TID } from '@atproto/common';
 import * as cbor from '@ipld/dag-cbor';
 import oauth from './oauth.js';
 import admin from './admin.js';
@@ -293,7 +294,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(req.user.signing_key));
     const repoObj = await Repo.load(storage, CID.parse(req.user.root_cid));
     
-    const finalRkey = rkey || createTid();
+    const finalRkey = rkey || TID.nextStr();
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record: fixedRecord }], keypair);
     
     const recordCid = await updatedRepo.data.get(collection + '/' + finalRkey);
@@ -410,7 +411,7 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
 
   const repoWrites = writes.map(w => {
       if (w.$type === 'com.atproto.repo.applyWrites#create') {
-          return { action: WriteOpAction.Create, collection: w.collection, rkey: w.rkey || createTid(), record: fixCids(w.value) };
+          return { action: WriteOpAction.Create, collection: w.collection, rkey: w.rkey || TID.nextStr(), record: fixCids(w.value) };
       } else if (w.$type === 'com.atproto.repo.applyWrites#update') {
           return { action: WriteOpAction.Update, collection: w.collection, rkey: w.rkey, record: fixCids(w.value) };
       } else if (w.$type === 'com.atproto.repo.applyWrites#delete') {

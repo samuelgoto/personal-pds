@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { createHash } from 'crypto';
-import { TID } from '@atproto/common';
 import { CID } from 'multiformats/cid';
 import * as cbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
@@ -89,9 +88,6 @@ export function fixCids(obj) {
 }
 
 
-export function createTid() {
-  return TID.nextStr();
-}
 
 export async function createBlobCid(content) {
   const hash = await sha256.sha256.digest(content);
