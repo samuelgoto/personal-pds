@@ -2,7 +2,7 @@ import { Repo, ReadableBlockstore, BlockMap, blocksToCarFile, WriteOpAction } fr
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import * as crypto from '@atproto/crypto';
-import { cborDecode, cborEncode, formatDid, createBlobCid } from './util.js';
+import { cborDecode, cborEncode, formatDid, createBlobCid, fixCids } from './util.js';
 import axios from 'axios';
 import { createHash } from 'crypto';
 import { sequencer } from './sequencer.js';
@@ -176,19 +176,18 @@ export async function maybeInitRepo() {
       action: WriteOpAction.Create,
       collection: 'app.bsky.actor.profile',
       rkey: 'self',
-      record: {
+      record: fixCids({
         $type: 'app.bsky.actor.profile',
         displayName: process.env.DISPLAY_NAME || domain,
         description: process.env.DESCRIPTION || 'Personal PDS',
         avatar: avatarBlob,
         createdAt: new Date().toISOString(),
-      },
+      }),
     }
   ], keypair);
 
   const recordCid = await repo.data.get('app.bsky.actor.profile/self');
-  const carBlocks = await storage.getRepoBlocks();
-  const blocks = await blocksToCarFile(repo.cid, carBlocks);
+  const blocks = await blocksToCarFile(repo.cid, storage.newBlocks);
 
   await sequencer.sequenceEvent({
     type: 'commit',
@@ -199,8 +198,8 @@ export async function maybeInitRepo() {
       blocks: blocks,
       rev: repo.commit.rev,
       since: null,
-      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid || repo.cid }],
-      blobs: avatarBlob ? [CID.parse(avatarBlob.ref.$link)] : [],
+      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid }],
+      blobs: avatarBlob ? [CID.parse(avatarBlob.ref.$link.toString())] : [],
       time: new Date().toISOString(),
       rebase: false,
       tooBig: false,
@@ -208,6 +207,7 @@ export async function maybeInitRepo() {
   });
 
   await db.execute({
+
     sql: "INSERT OR IGNORE INTO system_state (key, value) VALUES ('repo_created_at', ?)",
     args: [new Date().toISOString()]
   });
