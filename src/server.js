@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from './db.js';
-import { createToken, verifyToken, createAccessToken, createIdToken, validateDpop, getJkt } from './auth.js';
+import { createToken, verifyToken, createAccessToken, createIdToken, validateDpop, getJkt, createServiceAuthToken } from './auth.js';
 import { TursoStorage, getRootCid, maybeInitRepo } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
@@ -52,7 +52,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Generic XRPC Proxy Middleware ---
+// --- Generic XRPC Proxy Middleware (Fallthrough) ---
 const serviceCache = new Map();
 
 const resolveServiceEndpoint = async (didWithFragment) => {
@@ -97,57 +97,6 @@ const resolveServiceEndpoint = async (didWithFragment) => {
   } catch (err) {
     console.error(`[RESOLVE_SERVICE] Failed to resolve service for ${didWithFragment}:`, err.message);
     return null;
-  }
-};
-
-const proxyRequest = async (req, res, targetUrl) => {
-  if (!targetUrl) {
-      return res.status(501).json({ error: 'NotImplemented', message: 'No proxy target available.' });
-  }
-  
-  try {
-    const forwardHeaders = {};
-    const whitelist = [
-        'accept', 'accept-encoding', 'accept-language', 'user-agent',
-        'atproto-accept-labelers', 'atproto-content-type',
-        'content-type'
-    ];
-    
-    for (const key of whitelist) {
-        if (req.headers[key]) forwardHeaders[key] = req.headers[key];
-    }
-
-    console.log(`[PROXY] Forwarding ${req.method} ${req.path} -> ${targetUrl}`);
-
-    const response = await axios({
-      method: req.method,
-      url: `${targetUrl}${req.path}`,
-      data: (req.method === 'GET' || req.method === 'HEAD') ? undefined : req.body,
-      headers: forwardHeaders,
-      params: req.query,
-      responseType: 'arraybuffer',
-      validateStatus: () => true,
-    });
-
-    if (response.status >= 400) {
-        console.error(`[PROXY] Target responded with error: ${response.status} for ${req.path}`);
-        try {
-            const bodyStr = Buffer.from(response.data).toString();
-            console.error(`[PROXY] Error body:`, bodyStr);
-        } catch (e) {
-            // ignore
-        }
-    }
-
-    // Forward response headers
-    Object.entries(response.headers).forEach(([key, value]) => {
-      res.setHeader(key, value);
-    });
-
-    res.status(response.status).send(response.data);
-  } catch (err) {
-    console.error(`[PROXY] Error proxying to ${targetUrl}:`, err.message);
-    res.status(502).json({ error: 'ProxyError', message: err.message });
   }
 };
 
@@ -1175,462 +1124,6 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
   }
 });
 
-app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
-    const { actor } = req.query;
-    const user = await getSingleUser(req);
-    if (!user || (actor !== user.did && actor !== user.handle)) {
-        return next();
-    }
-
-    const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
-    if (!profile) {
-        return res.status(404).json({ error: 'ProfileNotFound' });
-    }
-    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
-
-    // Hybrid Hydration for counts
-    const global = await fetchGlobalProfileData(user.did);
-    const localPosts = await countLocalRecords(repoObj, 'app.bsky.feed.post');
-    const localFollows = await countLocalRecords(repoObj, 'app.bsky.graph.follow');
-
-    res.json({
-        did: user.did,
-        handle: user.handle,
-        displayName: profile.displayName || user.handle,
-        description: profile.description || '',
-        avatar: getBlobUrl(req, profile.avatar),
-        banner: getBlobUrl(req, profile.banner),
-        followersCount: global.followersCount, // AppView is source of truth for followers
-        followsCount: Math.max(localFollows, global.followsCount),
-        postsCount: Math.max(localPosts, global.postsCount),
-        associated: {
-            activitySubscription: { allowSubscriptions: 'followers' }
-        },
-        viewer: {
-            muted: false,
-            blockedBy: false,
-        },
-        labels: [],
-        createdAt: repoCreatedAt,
-        indexedAt: new Date().toISOString(),
-    });
-});
-
-
-app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res, next) => {
-    const actors = Array.isArray(req.query.actors) ? req.query.actors : [req.query.actors];
-    const user = await getSingleUser(req);
-    
-    // If any actor is not us, let the proxy handle the whole batch
-    const isAllLocal = actors.every(a => a === user?.did || a === user?.handle);
-    if (!isAllLocal) {
-        return next();
-    }
-
-    const profiles = [];
-
-    if (user) {
-        const storage = new TursoStorage();
-        const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-        const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
-        
-        if (profile) {
-            const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
-            
-            // Hybrid Hydration
-            const global = await fetchGlobalProfileData(user.did);
-            const localPosts = await countLocalRecords(repoObj, 'app.bsky.feed.post');
-            const localFollows = await countLocalRecords(repoObj, 'app.bsky.graph.follow');
-
-            const localProfile = {
-                did: user.did,
-                handle: user.handle,
-                displayName: profile.displayName || user.handle,
-                description: profile.description || '',
-                avatar: getBlobUrl(req, profile.avatar),
-                banner: getBlobUrl(req, profile.banner),
-                followersCount: global.followersCount,
-                followsCount: Math.max(localFollows, global.followsCount),
-                postsCount: Math.max(localPosts, global.postsCount),
-                associated: {
-                    activitySubscription: { allowSubscriptions: 'followers' }
-                },
-                viewer: {
-                    muted: false,
-                    blockedBy: false,
-                },
-                labels: [],
-                createdAt: repoCreatedAt,
-                indexedAt: new Date().toISOString(),
-            };
-
-            for (const actor of actors) {
-                if (actor === user.did || actor === user.handle) {
-                    profiles.push(localProfile);
-                }
-            }
-        }
-    }
-
-    res.json({ profiles });
-});
-
-app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
-  try {
-    const prefsJson = await getSystemMeta(`prefs:${req.user.sub}`);
-    let preferences = prefsJson ? JSON.parse(prefsJson) : [];
-    
-    // Ensure there is at least an adultContentPref if missing
-    if (!preferences.find(p => p.$type === 'app.bsky.actor.defs#adultContentPref')) {
-        preferences.push({
-            $type: 'app.bsky.actor.defs#adultContentPref',
-            enabled: true
-        });
-    }
-
-    res.json({ preferences });
-  } catch (err) {
-    res.status(500).json({ error: 'InternalServerError' });
-  }
-});
-
-app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
-  try {
-    const { preferences } = req.body;
-    
-    // Extract and store birthDate if provided in personalDetailsPref
-    const personalDetailsPref = preferences.find(p => p.$type === 'app.bsky.actor.defs#personalDetailsPref');
-    if (personalDetailsPref?.birthDate) {
-        await db.execute({
-            sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
-            args: [`birthDate:${req.user.sub}`, personalDetailsPref.birthDate]
-        });
-    }
-
-    await db.execute({
-      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
-      args: [`prefs:${req.user.sub}`, JSON.stringify(preferences)]
-    });
-    res.json({});
-  } catch (err) {
-    res.status(500).json({ error: 'InternalServerError' });
-  }
-});
-
-const fetchExternalPost = async (req, uri) => {
-  try {
-    const appView = 'https://bsky.social';
-    console.log(`[EXTERNAL] Fetching external post: ${uri}`);
-    const response = await axios.get(`${appView}/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0`, {
-        timeout: 5000
-    });
-    // AppView returns a thread object which could be a threadViewPost or notFoundPost
-    if (response.data.thread?.post) {
-        return response.data.thread.post;
-    }
-    return response.data.thread;
-  } catch (err) {
-    console.error(`[EXTERNAL] Failed to fetch external post ${uri}: ${err.message}`);
-    return {
-        uri,
-        $type: 'app.bsky.feed.defs#notFoundPost',
-        notFound: true
-    };
-  }
-};
-
-// Helper to get likes for a set of posts
-const fetchGlobalProfileData = async (actor) => {
-  try {
-    const PUBLIC_API = 'https://public.api.bsky.app';
-    console.log(`[HYDRATION] Fetching global profile for: ${actor}`);
-    const res = await axios.get(`${PUBLIC_API}/xrpc/app.bsky.actor.getProfile`, {
-      params: { actor },
-      timeout: 3000
-    });
-    return {
-        followersCount: res.data.followersCount || 0,
-        followsCount: res.data.followsCount || 0,
-        postsCount: res.data.postsCount || 0
-    };
-  } catch (err) {
-    console.warn(`[HYDRATION] Failed to fetch global profile for ${actor}:`, err.message);
-    return { followersCount: 0, followsCount: 0, postsCount: 0 };
-  }
-};
-
-const countLocalRecords = async (repoObj, collection) => {
-  let count = 0;
-  for await (const rec of repoObj.walkRecords()) {
-    if (rec.collection === collection) count++;
-  }
-  return count;
-};
-
-const getLikesForPosts = async (repoObj, userDid) => {
-  const likes = new Map();
-  for await (const rec of repoObj.walkRecords()) {
-    if (rec.collection === 'app.bsky.feed.like') {
-      const subjectUri = rec.record.subject?.uri;
-      if (subjectUri) {
-        if (!likes.has(subjectUri)) {
-          likes.set(subjectUri, { count: 0, viewerLike: null });
-        }
-        const entry = likes.get(subjectUri);
-        entry.count++;
-        // In this single-user PDS, if the record is in our repo, it's the owner's like
-        entry.viewerLike = `at://${userDid}/app.bsky.feed.like/${rec.rkey}`;
-      }
-    }
-  }
-  return likes;
-};
-
-// Helper to get reposts for a set of posts
-const getRepostsForPosts = async (repoObj, userDid) => {
-  const reposts = new Map();
-  for await (const rec of repoObj.walkRecords()) {
-    if (rec.collection === 'app.bsky.feed.repost') {
-      const subjectUri = rec.record.subject?.uri;
-      if (subjectUri) {
-        if (!reposts.has(subjectUri)) {
-          reposts.set(subjectUri, { count: 0, viewerRepost: null });
-        }
-        const entry = reposts.get(subjectUri);
-        entry.count++;
-        // In this single-user PDS, if the record is in our repo, it's the owner's repost
-        entry.viewerRepost = `at://${userDid}/app.bsky.feed.repost/${rec.rkey}`;
-      }
-    }
-  }
-  return reposts;
-};
-
-// Helper to get quote counts
-const getQuotesForPosts = async (repoObj) => {
-  const quotes = new Map();
-  for await (const rec of repoObj.walkRecords()) {
-    if (rec.collection === 'app.bsky.feed.post') {
-      const embed = rec.record.embed;
-      let targetUri = null;
-      if (embed?.$type === 'app.bsky.embed.record' && embed.record?.uri) {
-          targetUri = embed.record.uri;
-      } else if (embed?.$type === 'app.bsky.embed.recordWithMedia' && embed.record?.record?.uri) {
-          targetUri = embed.record.record.uri;
-      }
-
-      if (targetUri) {
-        console.log(`[DEBUG] Found quote for: ${targetUri}`);
-        quotes.set(targetUri, (quotes.get(targetUri) || 0) + 1);
-      }
-    }
-  }
-  return quotes;
-};
-
-// Helper to fetch global counts from an AppView for a set of URIs
-const fetchGlobalCounts = async (uris) => {
-  if (!uris || uris.length === 0) return new Map();
-  try {
-    const PUBLIC_API = 'https://public.api.bsky.app';
-    console.log(`[HYDRATION] Fetching global counts for ${uris.length} posts...`);
-    const res = await axios.get(`${PUBLIC_API}/xrpc/app.bsky.feed.getPosts`, {
-      params: { uris },
-      timeout: 3000
-    });
-    
-    const globalData = new Map();
-    for (const post of res.data.posts || []) {
-      globalData.set(post.uri, {
-        likeCount: post.likeCount,
-        repostCount: post.repostCount,
-        quoteCount: post.quoteCount,
-        replyCount: post.replyCount
-      });
-    }
-    return globalData;
-  } catch (err) {
-    console.warn(`[HYDRATION] Failed to fetch global counts:`, err.message);
-    return new Map();
-  }
-};
-
-// Helper to hydrate a post with all its metadata and views
-const hydratePostView = async (repoObj, user, req, rec, likesMap, repostsMap, quotesMap, globalData = null) => {
-    const postUri = `at://${user.did}/${rec.collection}/${rec.rkey}`;
-    const likeInfo = likesMap.get(postUri) || { count: 0, viewerLike: undefined };
-    const repostInfo = repostsMap.get(postUri) || { count: 0, viewerRepost: undefined };
-    const localQuoteCount = quotesMap.get(postUri) || 0;
-    
-    // Merge local data with global AppView data
-    const external = globalData?.get(postUri);
-    const likeCount = Math.max(likeInfo.count, external?.likeCount || 0);
-    const repostCount = Math.max(repostInfo.count, external?.repostCount || 0);
-    const quoteCount = Math.max(localQuoteCount, external?.quoteCount || 0);
-    const replyCount = external?.replyCount || 0;
-
-    const author = {
-        did: user.did,
-        handle: user.handle,
-        displayName: (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.displayName || user.handle,
-        avatar: getBlobUrl(req, (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.avatar),
-        viewer: { muted: false, blockedBy: false },
-        labels: [],
-    };
-
-    const postView = {
-        uri: postUri,
-        cid: rec.cid.toString(),
-        author,
-        record: rec.record,
-        replyCount: replyCount,
-        repostCount: repostCount,
-        likeCount: likeCount,
-        quoteCount: quoteCount,
-        indexedAt: rec.record.createdAt || new Date().toISOString(),
-        viewer: {
-            like: likeInfo.viewerLike,
-            repost: repostInfo.viewerRepost
-        },
-        labels: [],
-    };
-
-    // Hydrate Embed View if it's a quote post
-    if (rec.record.embed?.$type === 'app.bsky.embed.record') {
-        const embedUri = rec.record.embed.record.uri;
-        const embedCid = rec.record.embed.record.cid;
-        
-        // Try to find embedded record locally first
-        const parts = embedUri.replace('at://', '').split('/');
-        const eRepo = parts[0];
-        const eColl = parts[1];
-        const eRkey = parts[2];
-
-        if (eRepo === user.did || eRepo === user.handle) {
-            const eRecord = await repoObj.getRecord(eColl, eRkey);
-            if (eRecord) {
-                const eCid = (await repoObj.data.get(`${eColl}/${eRkey}`)).toString();
-                postView.embed = {
-                    $type: 'app.bsky.embed.record#view',
-                    record: {
-                        $type: 'app.bsky.embed.record#viewRecord',
-                        uri: embedUri,
-                        cid: eCid,
-                        author, // Local post by same user
-                        value: eRecord,
-                        labels: [],
-                        indexedAt: eRecord.createdAt || new Date().toISOString(),
-                    }
-                };
-            }
-        }
-        // Future improvement: fetch external records via proxy if not local
-    }
-
-    return postView;
-};
-
-const getAuthorFeed = async (req, res, next, actor, limit) => {
-    const user = await getSingleUser(req);
-    if (!user || (actor !== user.did && actor !== user.handle)) {
-        return next();
-    }
-
-    const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
-    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
-    const likesMap = await getLikesForPosts(repoObj, user.did);
-    const repostsMap = await getRepostsForPosts(repoObj, user.did);
-    const quotesMap = await getQuotesForPosts(repoObj);
-    
-    // Gather all post URIs to fetch global data
-    const postUris = [];
-    for await (const rec of repoObj.walkRecords()) {
-        if (rec.collection === 'app.bsky.feed.post') {
-            postUris.push(`at://${user.did}/${rec.collection}/${rec.rkey}`);
-        }
-    }
-    const globalData = await fetchGlobalCounts(postUris);
-
-    const author = {
-        did: user.did,
-        handle: user.handle,
-        displayName: profile?.displayName || user.handle,
-        avatar: getBlobUrl(req, profile?.avatar),
-        associated: {
-            activitySubscription: { allowSubscriptions: 'followers' }
-        },
-        viewer: {
-            muted: false,
-            blockedBy: false,
-        },
-        labels: [],
-        createdAt: repoCreatedAt,
-        indexedAt: new Date().toISOString(),
-    };
-
-    const feed = [];
-    for await (const rec of repoObj.walkRecords()) {
-      if (rec.collection === 'app.bsky.feed.post') {
-        const postView = await hydratePostView(repoObj, user, req, rec, likesMap, repostsMap, quotesMap, globalData);
-        feed.push({ post: postView });
-      } else if (rec.collection === 'app.bsky.feed.repost') {
-        const subjectUri = rec.record.subject.uri;
-        const subjectCid = rec.record.subject.cid;
-        
-        // Try to fetch original post locally
-        const parts = subjectUri.replace('at://', '').split('/');
-        const repo = parts[0];
-        const collection = parts[1];
-        const rkey = parts[2];
-
-        if (repo === user.did || repo === user.handle) {
-            const postRecord = await repoObj.getRecord(collection, rkey);
-            if (postRecord) {
-                const postRec = { collection, rkey, record: postRecord, cid: subjectCid };
-                const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
-                feed.push({
-                    post: postView,
-                    reason: {
-                        $type: 'app.bsky.feed.defs#reasonRepost',
-                        by: author,
-                        indexedAt: rec.record.createdAt || new Date().toISOString(),
-                    }
-                });
-            }
-        }
-      }
-    }
-    
-    // Sort by the timestamp of the feed item (either post creation or repost timestamp)
-    feed.sort((a, b) => {
-        const timeA = a.reason ? a.reason.indexedAt : a.post.indexedAt;
-        const timeB = b.reason ? b.reason.indexedAt : b.post.indexedAt;
-        return new Date(timeB).getTime() - new Date(timeA).getTime();
-    });
-
-    res.json({ 
-        feed: feed.slice(0, parseInt(limit || '50', 10)),
-    });
-};
-
-app.get('/xrpc/app.bsky.feed.getAuthorFeed', async (req, res, next) => {
-  return getAuthorFeed(req, res, next, req.query.actor, req.query.limit);
-});
-
-app.get('/xrpc/app.bsky.feed.getTimeline', auth, async (req, res, next) => {
-  const host = getHost(req);
-  const userDid = formatDid(host);
-  return getAuthorFeed(req, res, next, userDid, req.query.limit);
-});
-
-app.get('/xrpc/app.bsky.feed.getFeed', auth, async (req, res) => {
-  res.json({ feed: [] });
-});
-
 app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
   try {
     const user = await getSingleUser(req);
@@ -1682,318 +1175,6 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
   }
 });
 
-const getPostThread = async (req, res, next, uri, isV2 = false) => {
-    const user = await getSingleUser(req);
-    if (!user) return res.status(404).json({ error: 'PostNotFound' });
-
-    // Canonicalize the URI to use the DID instead of the handle
-    const canonicalUri = uri.replace(`at://${user.handle}`, `at://${user.did}`);
-    const isLocalDid = canonicalUri.startsWith(`at://${user.did}`);
-
-    if (!isLocalDid) {
-        return next();
-    }
-
-    const parts = canonicalUri.replace('at://', '').split('/');
-    const collection = parts[1];
-    const rkey = parts[2];
-
-    const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-
-    const recordCid = await repoObj.data.get(`${collection}/${rkey}`);
-    const record = await repoObj.getRecord(collection, rkey);
-
-    if (!record) {
-        return res.status(404).json({ error: 'PostNotFound' });
-    }
-
-    const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
-    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
-    const likesMap = await getLikesForPosts(repoObj, user.did);
-    const repostsMap = await getRepostsForPosts(repoObj, user.did);
-    const quotesMap = await getQuotesForPosts(repoObj);
-
-    // Find replies in the repository
-    const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
-    const directReplies = [];
-    console.log(`[THREAD] Searching for replies to: ${canonicalUri} (from original: ${uri})`);
-
-    for (const entry of allPostEntries) {
-        if (!entry.k) continue; // Safety check
-        const postRkey = entry.k.split('/').pop();
-        if (postRkey === rkey) continue; // Skip the anchor post itself
-
-        const postRecord = await repoObj.getRecord('app.bsky.feed.post', postRkey);
-        const parentUri = postRecord?.reply?.parent?.uri;
-
-        if (parentUri) {
-            // Canonicalize the parent URI from the record for comparison
-            const canonicalParentUri = parentUri.replace(`at://${user.handle}`, `at://${user.did}`);
-            if (canonicalParentUri === canonicalUri) {
-                console.log(`[THREAD] Found direct reply: ${postRkey}`);
-                directReplies.push({
-                    uri: `at://${user.did}/app.bsky.feed.post/${postRkey}`,
-                    cid: entry.v.toString(),
-                    record: postRecord
-                });
-            }
-        }
-    }
-
-    // Gather URIs for main post and direct replies
-    const threadUris = [canonicalUri];
-    for (const reply of directReplies) threadUris.push(reply.uri);
-    const globalData = await fetchGlobalCounts(threadUris);
-
-    const author = {
-        did: user.did,
-        handle: user.handle,
-        displayName: (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.displayName || user.handle,
-        avatar: getBlobUrl(req, (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.avatar),
-        associated: {
-            activitySubscription: { allowSubscriptions: 'followers' }
-        },
-        viewer: {
-            muted: false,
-            blockedBy: false,
-        },
-        labels: [],
-        createdAt: repoCreatedAt,
-        indexedAt: new Date().toISOString(),
-    };
-
-    if (isV2) {
-        const postRec = { collection, rkey, record, cid: recordCid };
-        const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
-        postView.replyCount = Math.max(directReplies.length, postView.replyCount); // Use whichever is higher
-
-        const thread = [
-            {
-              uri: canonicalUri,
-              depth: 0,
-              value: {
-                $type: "app.bsky.unspecced.defs#threadItemPost",
-                post: postView,
-                moreParents: false,
-                moreReplies: 0,
-                opThread: true,
-                hiddenByThreadgate: false,
-                mutedByViewer: false
-              }
-            }
-        ];
-
-        // Add direct replies at depth 1
-        for (const reply of directReplies) {
-            const replyRec = { collection: 'app.bsky.feed.post', rkey: reply.uri.split('/').pop(), record: reply.record, cid: reply.cid };
-            const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap, globalData);
-            thread.push({
-                uri: reply.uri,
-                depth: 1,
-                value: {
-                    $type: "app.bsky.unspecced.defs#threadItemPost",
-                    post: replyView,
-                    moreParents: false,
-                    moreReplies: 0,
-                    opThread: false,
-                    hiddenByThreadgate: false,
-                    mutedByViewer: false
-                }
-            });
-        }
-
-        return res.json({ thread, hasOtherReplies: false });
-    }
-
-    // Legacy/Standard V1 structure
-    const postRec = { collection, rkey, record, cid: recordCid };
-    const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
-    postView.replyCount = Math.max(directReplies.length, postView.replyCount);
-
-    const threadReplies = [];
-    for (const reply of directReplies) {
-        const replyRec = { collection: 'app.bsky.feed.post', rkey: reply.uri.split('/').pop(), record: reply.record, cid: reply.cid };
-        const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap, globalData);
-        threadReplies.push({
-            $type: 'app.bsky.feed.defs#threadViewPost',
-            post: replyView,
-            replies: []
-        });
-    }
-
-    res.json({
-        thread: {
-            $type: 'app.bsky.feed.defs#threadViewPost',
-            post: postView,
-            replies: threadReplies,
-            threadContext: {},
-        }
-    });
-};
-app.get('/xrpc/app.bsky.feed.getPostThread', async (req, res, next) => {
-  return getPostThread(req, res, next, req.query.uri, false);
-});
-
-app.get('/xrpc/app.bsky.unspecced.getPostThreadV2', async (req, res, next) => {
-  return getPostThread(req, res, next, req.query.anchor, true);
-});
-
-app.get('/xrpc/app.bsky.graph.getFollows', async (req, res, next) => {
-    const { actor } = req.query;
-    const user = await getSingleUser(req);
-    const targetDid = req.headers['atproto-proxy'] || 'did:web:api.bsky.app#bsky_appview';
-    const targetUrl = await resolveServiceEndpoint(targetDid);
-
-    // If not local user, just proxy
-    if (!user || (actor !== user.did && actor !== user.handle)) {
-        return next();
-    }
-
-    console.log(`[FOLLOWS] Fetching hybrid follows for: ${actor}`);
-
-    // 1. Fetch from AppView
-    let globalFollows = [];
-    let subject = { did: user.did, handle: user.handle };
-    try {
-        const globalRes = await axios.get(`${targetUrl}/xrpc/app.bsky.graph.getFollows`, {
-            params: req.query,
-            timeout: 3000
-        });
-        globalFollows = globalRes.data.follows || [];
-        subject = globalRes.data.subject || subject;
-    } catch (e) {
-        console.warn('[FOLLOWS] Failed to fetch global follows');
-    }
-
-    // 2. Merge local follows (ensure everything we followed locally is in the list)
-    const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    for await (const rec of repoObj.walkRecords()) {
-        if (rec.collection === 'app.bsky.graph.follow') {
-            const followedDid = rec.record.subject;
-            const alreadyPresent = globalFollows.some(f => f.did === followedDid);
-            if (!alreadyPresent) {
-                globalFollows.unshift({
-                    did: followedDid,
-                    handle: 'unknown', // Profile would be hydrated by AppView eventually
-                    displayName: '',
-                    viewer: { muted: false, blockedBy: false },
-                    indexedAt: rec.record.createdAt || new Date().toISOString()
-                });
-            }
-        }
-    }
-
-    res.json({
-        follows: globalFollows,
-        subject: subject,
-    });
-});
-
-app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res, next) => {
-    const { actor } = req.query;
-    const user = await getSingleUser(req);
-    
-    // For followers, the AppView is always the source of truth for a single-user PDS
-    // We just ensure we proxy it even for the local user.
-    console.log(`[FOLLOWERS] Proxying followers request for: ${actor}`);
-    const targetDid = req.headers['atproto-proxy'] || 'did:web:api.bsky.app#bsky_appview';
-    const targetUrl = await resolveServiceEndpoint(targetDid);
-    
-    const response = await axios.get(`${targetUrl}/xrpc/app.bsky.graph.getFollowers`, {
-        params: req.query,
-        timeout: 3000,
-        validateStatus: () => true
-    });
-
-    res.status(response.status).send(response.data);
-});
-
-app.get('/xrpc/app.bsky.graph.getSuggestedFollowsByActor', async (req, res, next) => {
-  const { actor } = req.query;
-  const user = await getSingleUser(req);
-  if (user && actor !== user.did && actor !== user.handle) {
-      return next();
-  }
-  res.json({ suggestions: [] });
-});
-
-app.get('/xrpc/app.bsky.graph.getMutes', auth, async (req, res, next) => {
-  // Since mutes/blocks are personal to the logged-in user, we always handle locally
-  res.json({ mutes: [] });
-});
-
-app.get('/xrpc/app.bsky.graph.getBlocks', auth, async (req, res, next) => {
-  res.json({ blocks: [] });
-});
-
-app.get('/xrpc/app.bsky.actor.getSuggestions', auth, async (req, res, next) => {
-  return next();
-});
-
-app.get('/xrpc/app.bsky.notification.getUnreadCount', auth, async (req, res, next) => {
-  res.json({ count: 0 });
-});
-
-
-app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res, next) => {
-  res.json({});
-});
-
-app.get('/xrpc/app.bsky.labeler.getServices', async (req, res, next) => {
-  return next();
-});
-
-app.get('/xrpc/app.bsky.ageassurance.getState', async (req, res, next) => {
-  res.json({ status: 'verified' });
-});
-
-app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res) => {
-  res.json({ logs: [] });
-});
-
-app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res) => {
-  res.json({ convos: [] });
-});
-
-app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res) => {
-  res.json({ 
-    notifications: [], 
-    cursor: undefined,
-    seenAt: new Date().toISOString()
-  });
-});
-
-app.post('/xrpc/app.bsky.notification.updateSeen', auth, async (req, res) => {
-  res.json({});
-});
-
-app.get('/xrpc/app.bsky.draft.getDrafts', auth, async (req, res) => {
-  res.json({ drafts: [] });
-});
-
-app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
-  try {
-    const { repo, collection, limit } = req.query;
-    const user = await getSingleUser(req);
-    if (!user || (repo !== user.did && repo !== user.handle)) return res.status(404).json({ error: 'RepoNotFound' });
-
-    const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    
-    const records = [];
-    for await (const rec of repoObj.walkRecords()) {
-      if (rec.collection === collection) {
-        records.push({ uri: `at://${user.did}/${rec.collection}/${rec.rkey}`, cid: rec.cid.toString(), value: rec.record });
-      }
-    }
-    res.json({ records: records.slice(0, parseInt(limit || '50', 10)) });
-  } catch (err) {
-    res.status(500).json({ error: 'InternalServerError' });
-  }
-});
-
 // Helper to get a single record from the local repo
 const getRecordHelper = async (repo, collection, rkey) => {
   const user = await getSingleUser(); 
@@ -2040,12 +1221,12 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
     
     const records = [];
     for (const entry of entries) {
-        const rkey = entry.k.split('/').pop();
+        const rkey = entry.key.split('/').pop();
         const value = await repoObj.getRecord(collection, rkey);
         if (value) {
             records.push({
                 uri: `at://${user.did}/${collection}/${rkey}`,
-                cid: entry.v.toString(),
+                cid: entry.value.toString(),
                 value
             });
         }
@@ -2056,58 +1237,6 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
     console.error('Error in listRecords:', err);
     res.status(500).json({ error: 'InternalServerError' });
   }
-});
-
-app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
-    const { uris } = req.query;
-    const requestedUris = Array.isArray(uris) ? uris : [uris];
-    const user = await getSingleUser(req);
-    if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
-
-    const profileRes = await getRecordHelper(user.did, 'app.bsky.actor.profile', 'self');
-    const profile = profileRes?.value;
-    const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
-
-    const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
-    const likesMap = await getLikesForPosts(repoObj, user.did);
-    const repostsMap = await getRepostsForPosts(repoObj, user.did);
-    const quotesMap = await getQuotesForPosts(repoObj);
-    const globalData = await fetchGlobalCounts(requestedUris);
-
-    const author = {
-        did: user.did,
-        handle: user.handle,
-        displayName: profile?.displayName || user.handle,
-        avatar: profile?.avatar,
-        associated: {
-            activitySubscription: { allowSubscriptions: 'followers' }
-        },
-        labels: [],
-        createdAt: repoCreatedAt,
-        indexedAt: new Date().toISOString(),
-    };
-
-    const posts = [];
-    for (const uri of requestedUris) {
-        if (!uri) continue;
-        // at://did:plc:123/app.bsky.feed.post/456
-        const parts = uri.replace('at://', '').split('/');
-        const repo = parts[0];
-        const collection = parts[1];
-        const rkey = parts[2];
-
-        if (collection !== 'app.bsky.feed.post') continue;
-
-        const recordRes = await getRecordHelper(repo, collection, rkey);
-        if (recordRes) {
-            const postRec = { collection, rkey, record: recordRes.value, cid: recordRes.cid };
-            const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap, globalData);
-            posts.push(postView);
-        }
-    }
-
-    res.json({ posts });
 });
 
 app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
@@ -2348,14 +1477,50 @@ app.all(/^\/xrpc\/.*/, async (req, res, next) => {
   const proxyTargetDid = req.headers['atproto-proxy'];
   if (!proxyTargetDid) return next();
   
-  console.log(`[PROXY] Explicit request to proxy to ${proxyTargetDid} (Fallthrough)`);
-  const resolvedEndpoint = await resolveServiceEndpoint(proxyTargetDid);
-  if (resolvedEndpoint) {
-      return await proxyRequest(req, res, resolvedEndpoint);
-  } else {
-      console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
-      return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
+  const method = req.path.replace('/xrpc/', '');
+  const targetUrl = await resolveServiceEndpoint(proxyTargetDid);
+  if (!targetUrl) {
+    console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
+    return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
   }
+
+  console.log(`[PROXY] Proxying ${method} to ${proxyTargetDid} (${targetUrl})`);
+
+  const forwardHeaders = {};
+  const whitelist = [
+      'accept', 'accept-encoding', 'accept-language', 'user-agent',
+      'atproto-accept-labelers', 'atproto-content-type',
+      'content-type'
+  ];
+  
+  for (const key of whitelist) {
+      if (req.headers[key]) forwardHeaders[key] = req.headers[key];
+  }
+
+  // Add Service Authentication
+  const serviceToken = await createServiceAuthToken(proxyTargetDid, method);
+  forwardHeaders['authorization'] = `Bearer ${serviceToken}`;
+
+  const response = await axios({
+    method: req.method,
+    url: `${targetUrl}${req.path}`,
+    data: (req.method === 'GET' || req.method === 'HEAD') ? undefined : req.body,
+    headers: forwardHeaders,
+    params: req.query,
+    responseType: 'arraybuffer',
+    validateStatus: () => true,
+  });
+
+  if (response.status >= 400) {
+      console.error(`[PROXY] Target responded with error: ${response.status} for ${req.path}`);
+  }
+
+  // Forward response headers
+  Object.entries(response.headers).forEach(([key, value]) => {
+    res.setHeader(key, value);
+  });
+
+  res.status(response.status).send(response.data);
 });
 
 // --- 404 Catch-all ---

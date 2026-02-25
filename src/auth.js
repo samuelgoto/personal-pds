@@ -51,6 +51,33 @@ export async function createIdToken(did, handle, client_id, issuer) {
   return `${headerB64}.${payloadB64}.${sigB64}`;
 }
 
+export async function createServiceAuthToken(aud, lxm, exp = null) {
+  const privKeyHex = process.env.PRIVATE_KEY;
+  const pdsDid = (process.env.PDS_DID || '').trim();
+  if (!privKeyHex) throw new Error('No PDS private key');
+  if (!pdsDid) throw new Error('No PDS DID');
+
+  const payload = {
+    iss: pdsDid,
+    aud: aud,
+    lxm: lxm,
+    iat: Math.floor(Date.now() / 1000),
+    exp: exp || (Math.floor(Date.now() / 1000) + 60), // Default 60 seconds
+    jti: createHash('sha256').update(Math.random().toString()).digest('hex'),
+  };
+
+  const header = { typ: 'JWT', alg: 'ES256K' };
+  const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const data = Buffer.from(`${headerB64}.${payloadB64}`);
+
+  const keypair = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+  const sig = await keypair.sign(data);
+  const sigB64 = Buffer.from(sig).toString('base64url');
+
+  return `${headerB64}.${payloadB64}.${sigB64}`;
+}
+
 export function verifyToken(token) {
   try {
     return jwt.verify(token, JWT_SECRET);
