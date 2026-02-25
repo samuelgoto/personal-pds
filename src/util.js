@@ -81,17 +81,7 @@ export function fixCids(obj) {
   return out;
 }
 
-
-
 export async function createBlobCid(content) {
   const hash = await sha256.sha256.digest(content);
   return CID.createV1(0x55, hash).toString(); // 0x55 is raw codec (typical for blobs)
-}
-
-export function wrapCompressedSecp256k1(publicKeyBytes) {
-  const header = Buffer.from([
-    0x30, 0x36, 0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 
-    0x81, 0x04, 0x00, 0x0a, 0x03, 0x22, 0x00
-  ]);
-  return Buffer.concat([header, Buffer.from(publicKeyBytes)]);
 }
