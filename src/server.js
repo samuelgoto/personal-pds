@@ -1374,6 +1374,89 @@ const getRepostsForPosts = async (repoObj, userDid) => {
   return reposts;
 };
 
+// Helper to get quote counts
+const getQuotesForPosts = async (repoObj) => {
+  const quotes = new Map();
+  for await (const rec of repoObj.walkRecords()) {
+    if (rec.collection === 'app.bsky.feed.post') {
+      const embed = rec.record.embed;
+      if (embed?.$type === 'app.bsky.embed.record' && embed.record?.uri) {
+        const targetUri = embed.record.uri;
+        quotes.set(targetUri, (quotes.get(targetUri) || 0) + 1);
+      }
+    }
+  }
+  return quotes;
+};
+
+// Helper to hydrate a post with all its metadata and views
+const hydratePostView = async (repoObj, user, req, rec, likesMap, repostsMap, quotesMap) => {
+    const postUri = `at://${user.did}/${rec.collection}/${rec.rkey}`;
+    const likeInfo = likesMap.get(postUri) || { count: 0, viewerLike: undefined };
+    const repostInfo = repostsMap.get(postUri) || { count: 0, viewerRepost: undefined };
+    const quoteCount = quotesMap.get(postUri) || 0;
+
+    const author = {
+        did: user.did,
+        handle: user.handle,
+        displayName: (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.displayName || user.handle,
+        avatar: getBlobUrl(req, (await repoObj.getRecord('app.bsky.actor.profile', 'self'))?.avatar),
+        viewer: { muted: false, blockedBy: false },
+        labels: [],
+    };
+
+    const postView = {
+        uri: postUri,
+        cid: rec.cid.toString(),
+        author,
+        record: rec.record,
+        replyCount: 0, // Simplified
+        repostCount: repostInfo.count,
+        likeCount: likeInfo.count,
+        quoteCount: quoteCount,
+        indexedAt: rec.record.createdAt || new Date().toISOString(),
+        viewer: {
+            like: likeInfo.viewerLike,
+            repost: repostInfo.viewerRepost
+        },
+        labels: [],
+    };
+
+    // Hydrate Embed View if it's a quote post
+    if (rec.record.embed?.$type === 'app.bsky.embed.record') {
+        const embedUri = rec.record.embed.record.uri;
+        const embedCid = rec.record.embed.record.cid;
+        
+        // Try to find embedded record locally first
+        const parts = embedUri.replace('at://', '').split('/');
+        const eRepo = parts[0];
+        const eColl = parts[1];
+        const eRkey = parts[2];
+
+        if (eRepo === user.did || eRepo === user.handle) {
+            const eRecord = await repoObj.getRecord(eColl, eRkey);
+            if (eRecord) {
+                const eCid = (await repoObj.data.get(`${eColl}/${eRkey}`)).toString();
+                postView.embed = {
+                    $type: 'app.bsky.embed.record#view',
+                    record: {
+                        $type: 'app.bsky.embed.record#viewRecord',
+                        uri: embedUri,
+                        cid: eCid,
+                        author, // Local post by same user
+                        value: eRecord,
+                        labels: [],
+                        indexedAt: eRecord.createdAt || new Date().toISOString(),
+                    }
+                };
+            }
+        }
+        // Future improvement: fetch external records via proxy if not local
+    }
+
+    return postView;
+};
+
 const getAuthorFeed = async (req, res, next, actor, limit) => {
   try {
     const user = await getSingleUser(req);
@@ -1387,6 +1470,7 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
     const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     const likesMap = await getLikesForPosts(repoObj, user.did);
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
+    const quotesMap = await getQuotesForPosts(repoObj);
     
     const author = {
         did: user.did,
@@ -1408,26 +1492,8 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
     const feed = [];
     for await (const rec of repoObj.walkRecords()) {
       if (rec.collection === 'app.bsky.feed.post') {
-        const postUri = `at://${user.did}/${rec.collection}/${rec.rkey}`;
-        const likeInfo = likesMap.get(postUri) || { count: 0, viewerLike: undefined };
-        const repostInfo = repostsMap.get(postUri) || { count: 0, viewerRepost: undefined };
-        feed.push({
-            post: {
-                uri: postUri,
-                cid: rec.cid.toString(),
-                author,
-                record: rec.record,
-                replyCount: 0,
-                repostCount: repostInfo.count,
-                likeCount: likeInfo.count,
-                indexedAt: rec.record.createdAt || new Date().toISOString(),
-                viewer: {
-                    like: likeInfo.viewerLike,
-                    repost: repostInfo.viewerRepost
-                },
-                labels: [],
-            }
-        });
+        const postView = await hydratePostView(repoObj, user, req, rec, likesMap, repostsMap, quotesMap);
+        feed.push({ post: postView });
       } else if (rec.collection === 'app.bsky.feed.repost') {
         const subjectUri = rec.record.subject.uri;
         const subjectCid = rec.record.subject.cid;
@@ -1437,49 +1503,21 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
         const repo = parts[0];
         const collection = parts[1];
         const rkey = parts[2];
-        
-        let originalPost = null;
-        let postAuthor = author;
 
         if (repo === user.did || repo === user.handle) {
             const postRecord = await repoObj.getRecord(collection, rkey);
             if (postRecord) {
-                const likeInfo = likesMap.get(subjectUri) || { count: 0, viewerLike: undefined };
-                const repostInfo = repostsMap.get(subjectUri) || { count: 0, viewerRepost: undefined };
-                originalPost = {
-                    uri: subjectUri,
-                    cid: subjectCid,
-                    author: postAuthor,
-                    record: postRecord,
-                    replyCount: 0,
-                    repostCount: repostInfo.count,
-                    likeCount: likeInfo.count,
-                    indexedAt: postRecord.createdAt || new Date().toISOString(),
-                    viewer: {
-                        like: likeInfo.viewerLike,
-                        repost: repostInfo.viewerRepost
-                    },
-                    labels: [],
-                };
+                const postRec = { collection, rkey, record: postRecord, cid: subjectCid };
+                const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
+                feed.push({
+                    post: postView,
+                    reason: {
+                        $type: 'app.bsky.feed.defs#reasonRepost',
+                        by: author,
+                        indexedAt: rec.record.createdAt || new Date().toISOString(),
+                    }
+                });
             }
-        } else {
-            // It's an external post. For now we skip showing it in the feed if we can't find it locally,
-            // or we could potentially fetch it. 
-            // Simple approach: skip external reposts in the *author* feed for now if not implemented.
-            // But wait, the user wants to see their reposts.
-            // Let's try to fetch it from the network if it's external.
-            // We'll use getRecordHelper or similar.
-        }
-
-        if (originalPost) {
-            feed.push({
-                post: originalPost,
-                reason: {
-                    $type: 'app.bsky.feed.defs#reasonRepost',
-                    by: author,
-                    indexedAt: rec.record.createdAt || new Date().toISOString(),
-                }
-            });
         }
       }
     }
@@ -1596,6 +1634,7 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     const likesMap = await getLikesForPosts(repoObj, user.did);
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
+    const quotesMap = await getQuotesForPosts(repoObj);
 
     const author = {
         did: user.did,
@@ -1642,29 +1681,17 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     }
 
     if (isV2) {
+        const postRec = { collection, rkey, record, cid: recordCid };
+        const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
+        postView.replyCount = directReplies.length;
+
         const thread = [
             {
               uri: canonicalUri,
               depth: 0,
               value: {
                 $type: "app.bsky.unspecced.defs#threadItemPost",
-                post: {
-                  uri: canonicalUri,
-                  cid: recordCid.toString(),
-                  author,
-                  record,
-                  replyCount: directReplies.length,
-                  repostCount: repostsMap.get(canonicalUri)?.count || 0,
-                  likeCount: likesMap.get(canonicalUri)?.count || 0,
-                  quoteCount: 0,
-                  bookmarkCount: 0,
-                  indexedAt: record.createdAt || new Date().toISOString(),
-                  viewer: {
-                    like: likesMap.get(canonicalUri)?.viewerLike,
-                    repost: repostsMap.get(canonicalUri)?.viewerRepost
-                  },
-                  labels: []
-                },
+                post: postView,
                 moreParents: false,
                 moreReplies: 0,
                 opThread: true,
@@ -1676,28 +1703,14 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
 
         // Add direct replies at depth 1
         for (const reply of directReplies) {
+            const replyRec = { collection: 'app.bsky.feed.post', rkey: reply.uri.split('/').pop(), record: reply.record, cid: reply.cid };
+            const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap);
             thread.push({
                 uri: reply.uri,
                 depth: 1,
                 value: {
                     $type: "app.bsky.unspecced.defs#threadItemPost",
-                    post: {
-                        uri: reply.uri,
-                        cid: reply.cid,
-                        author, // In single user PDS, author is the same
-                        record: reply.record,
-                        replyCount: 0,
-                        repostCount: repostsMap.get(reply.uri)?.count || 0,
-                        likeCount: likesMap.get(reply.uri)?.count || 0,
-                        quoteCount: 0,
-                        bookmarkCount: 0,
-                        indexedAt: reply.record.createdAt || new Date().toISOString(),
-                        viewer: {
-                            like: likesMap.get(reply.uri)?.viewerLike,
-                            repost: repostsMap.get(reply.uri)?.viewerRepost
-                        },
-                        labels: []
-                    },
+                    post: replyView,
                     moreParents: false,
                     moreReplies: 0,
                     opThread: false,
@@ -1711,47 +1724,26 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     }
 
     // Legacy/Standard V1 structure
+    const postRec = { collection, rkey, record, cid: recordCid };
+    const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
+    postView.replyCount = directReplies.length;
+
+    const threadReplies = [];
+    for (const reply of directReplies) {
+        const replyRec = { collection: 'app.bsky.feed.post', rkey: reply.uri.split('/').pop(), record: reply.record, cid: reply.cid };
+        const replyView = await hydratePostView(repoObj, user, req, replyRec, likesMap, repostsMap, quotesMap);
+        threadReplies.push({
+            $type: 'app.bsky.feed.defs#threadViewPost',
+            post: replyView,
+            replies: []
+        });
+    }
+
     res.json({
         thread: {
             $type: 'app.bsky.feed.defs#threadViewPost',
-            post: {
-                uri: canonicalUri,
-                cid: recordCid.toString(),
-                author,
-                record,
-                replyCount: directReplies.length,
-                repostCount: repostsMap.get(canonicalUri)?.count || 0,
-                likeCount: likesMap.get(canonicalUri)?.count || 0,
-                quoteCount: 0,
-                bookmarkCount: 0,
-                indexedAt: record.createdAt || new Date().toISOString(),
-                viewer: {
-                    like: likesMap.get(canonicalUri)?.viewerLike,
-                    repost: repostsMap.get(canonicalUri)?.viewerRepost
-                },
-                labels: [],
-            },
-            replies: directReplies.map(reply => ({
-                $type: 'app.bsky.feed.defs#threadViewPost',
-                post: {
-                    uri: reply.uri,
-                    cid: reply.cid,
-                    author,
-                    record: reply.record,
-                    replyCount: 0,
-                    repostCount: repostsMap.get(reply.uri)?.count || 0,
-                    likeCount: likesMap.get(reply.uri)?.count || 0,
-                    quoteCount: 0,
-                    bookmarkCount: 0,
-                    indexedAt: reply.record.createdAt || new Date().toISOString(),
-                    viewer: {
-                        like: likesMap.get(reply.uri)?.viewerLike,
-                        repost: repostsMap.get(reply.uri)?.viewerRepost
-                    },
-                    labels: [],
-                },
-                replies: []
-            })),
+            post: postView,
+            replies: threadReplies,
             threadContext: {},
         }
     });
@@ -1969,6 +1961,7 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     const likesMap = await getLikesForPosts(repoObj, user.did);
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
+    const quotesMap = await getQuotesForPosts(repoObj);
 
     const author = {
         did: user.did,
@@ -1996,25 +1989,9 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
 
         const recordRes = await getRecordHelper(repo, collection, rkey);
         if (recordRes) {
-            const likeInfo = likesMap.get(uri) || { count: 0, viewerLike: undefined };
-            const repostInfo = repostsMap.get(uri) || { count: 0, viewerRepost: undefined };
-            posts.push({
-                uri,
-                cid: recordRes.cid,
-                author,
-                record: recordRes.value,
-                replyCount: 0, // Placeholder
-                repostCount: repostInfo.count,
-                likeCount: likeInfo.count,
-                quoteCount: 0,
-                bookmarkCount: 0,
-                indexedAt: recordRes.value.createdAt || new Date().toISOString(),
-                viewer: {
-                    like: likeInfo.viewerLike,
-                    repost: repostInfo.viewerRepost
-                },
-                labels: [],
-            });
+            const postRec = { collection, rkey, record: recordRes.value, cid: recordRes.cid };
+            const postView = await hydratePostView(repoObj, user, req, postRec, likesMap, repostsMap, quotesMap);
+            posts.push(postView);
         }
     }
 
