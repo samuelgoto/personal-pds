@@ -52,6 +52,120 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// --- Generic XRPC Proxy Middleware ---
+const serviceCache = new Map();
+
+const resolveServiceEndpoint = async (didWithFragment) => {
+  if (serviceCache.has(didWithFragment)) {
+      const cached = serviceCache.get(didWithFragment);
+      if (Date.now() - cached.time < 3600000) return cached.url; // Cache for 1 hour
+  }
+
+  try {
+    const [did, fragment] = didWithFragment.split('#');
+    let doc;
+
+    if (did.startsWith('did:web:')) {
+      const domain = did.split(':').pop();
+      const res = await axios.get(`https://${domain}/.well-known/did.json`, { timeout: 5000 });
+      doc = res.data;
+    } else if (did.startsWith('did:plc:')) {
+      const res = await axios.get(`https://plc.directory/${did}`, { timeout: 5000 });
+      doc = res.data;
+    } else {
+      return null;
+    }
+
+    if (!doc || !doc.service) return null;
+
+    let endpoint = null;
+    if (fragment) {
+      const serviceId = `#${fragment}`;
+      const service = doc.service.find(s => s.id === serviceId || s.id === didWithFragment || s.id === `#${didWithFragment}`);
+      endpoint = service?.serviceEndpoint || null;
+    }
+
+    if (!endpoint) {
+      const atprotoService = doc.service.find(s => s.type === 'AtprotoPersonalDataServer' || s.type === 'BskyAppView');
+      endpoint = atprotoService?.serviceEndpoint || doc.service[0]?.serviceEndpoint || null;
+    }
+
+    if (endpoint) {
+        serviceCache.set(didWithFragment, { url: endpoint, time: Date.now() });
+    }
+    return endpoint;
+  } catch (err) {
+    console.error(`[RESOLVE_SERVICE] Failed to resolve service for ${didWithFragment}:`, err.message);
+    return null;
+  }
+};
+
+const proxyRequest = async (req, res, targetUrl) => {
+  if (!targetUrl) {
+      return res.status(501).json({ error: 'NotImplemented', message: 'No proxy target available.' });
+  }
+  
+  try {
+    const forwardHeaders = {};
+    const whitelist = [
+        'accept', 'accept-encoding', 'accept-language', 'user-agent',
+        'atproto-accept-labelers', 'atproto-content-type',
+        'content-type'
+    ];
+    
+    for (const key of whitelist) {
+        if (req.headers[key]) forwardHeaders[key] = req.headers[key];
+    }
+
+    console.log(`[PROXY] Forwarding ${req.method} ${req.path} -> ${targetUrl}`);
+
+    const response = await axios({
+      method: req.method,
+      url: `${targetUrl}${req.path}`,
+      data: (req.method === 'GET' || req.method === 'HEAD') ? undefined : req.body,
+      headers: forwardHeaders,
+      params: req.query,
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+    });
+
+    if (response.status >= 400) {
+        console.error(`[PROXY] Target responded with error: ${response.status} for ${req.path}`);
+        try {
+            const bodyStr = Buffer.from(response.data).toString();
+            console.error(`[PROXY] Error body:`, bodyStr);
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    // Forward response headers
+    Object.entries(response.headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+
+    res.status(response.status).send(response.data);
+  } catch (err) {
+    console.error(`[PROXY] Error proxying to ${targetUrl}:`, err.message);
+    res.status(502).json({ error: 'ProxyError', message: err.message });
+  }
+};
+
+// Explicit proxying via atproto-proxy header (MUST be defined before local routes)
+app.all(/^\/xrpc\/.*/, async (req, res, next) => {
+  const proxyTargetDid = req.headers['atproto-proxy'];
+  if (!proxyTargetDid) return next();
+  
+  console.log(`[PROXY] Explicit request to proxy to ${proxyTargetDid}`);
+  const resolvedEndpoint = await resolveServiceEndpoint(proxyTargetDid);
+  if (resolvedEndpoint) {
+      return await proxyRequest(req, res, resolvedEndpoint);
+  } else {
+      console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
+      return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
+  }
+});
+
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const pdsDid = (process.env.PDS_DID || '').trim();
   console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
@@ -1080,11 +1194,8 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
   try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
-    
-    // If not our DID or Handle, proxy it!
     if (!user || (actor !== user.did && actor !== user.handle)) {
-        console.log(`[GET_PROFILE] Proxying request for external actor: ${actor}`);
-        return proxyRequest(req, res, DEFAULT_APPVIEW);
+        return res.status(404).json({ error: 'ProfileNotFound' });
     }
 
     const storage = new TursoStorage();
@@ -1123,14 +1234,6 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
   try {
     const actors = Array.isArray(req.query.actors) ? req.query.actors : [req.query.actors];
     const user = await getSingleUser(req);
-    
-    // If we're requesting multiple profiles and any of them aren't us, proxy the whole request
-    const isAllLocal = actors.every(a => a === user?.did || a === user?.handle);
-    if (!isAllLocal) {
-        console.log(`[GET_PROFILES] Proxying request for external actors: ${actors}`);
-        return proxyRequest(req, res, DEFAULT_APPVIEW);
-    }
-
     const profiles = [];
 
     if (user) {
@@ -1242,11 +1345,8 @@ const fetchExternalPost = async (req, uri) => {
 const getAuthorFeed = async (req, res, actor, limit) => {
   try {
     const user = await getSingleUser(req);
-    
-    // Proxy if not the local user
     if (!user || (actor !== user.did && actor !== user.handle)) {
-        console.log(`[GET_AUTHOR_FEED] Proxying feed request for: ${actor}`);
-        return proxyRequest(req, res, DEFAULT_APPVIEW);
+        return res.json({ feed: [] });
     }
 
     const storage = new TursoStorage();
@@ -1377,8 +1477,7 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
     const isLocalDid = canonicalUri.startsWith(`at://${user.did}`);
 
     if (!isLocalDid) {
-        console.log(`[GET_POST_THREAD] Proxying thread request for external URI: ${uri}`);
-        return proxyRequest(req, res, DEFAULT_APPVIEW);
+        return res.status(404).json({ error: 'PostNotFound' });
     }
 
     const parts = canonicalUri.replace('at://', '').split('/');
@@ -2016,72 +2115,6 @@ app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
 
   res.setHeader('Content-Type', 'application/vnd.ipld.car');
   res.send(Buffer.from(car));
-});
-
-// --- Generic XRPC Proxy ---
-const DEFAULT_APPVIEW = process.env.APPVIEW_URL || 'https://bsky.social';
-
-const proxyRequest = async (req, res, targetUrl) => {
-  try {
-    const forwardHeaders = {};
-    const whitelist = [
-        'accept', 'accept-encoding', 'accept-language', 'user-agent',
-        'atproto-accept-labelers', 'atproto-content-type',
-        'content-type'
-    ];
-    
-    for (const key of whitelist) {
-        if (req.headers[key]) forwardHeaders[key] = req.headers[key];
-    }
-
-    console.log(`[PROXY] Forwarding ${req.method} ${req.path} -> ${targetUrl}`);
-
-    const response = await axios({
-      method: req.method,
-      url: `${targetUrl}${req.path}`,
-      data: (req.method === 'GET' || req.method === 'HEAD') ? undefined : req.body,
-      headers: forwardHeaders,
-      params: req.query,
-      responseType: 'arraybuffer',
-      validateStatus: () => true,
-    });
-
-    if (response.status >= 400) {
-        console.error(`[PROXY] Target responded with error: ${response.status} for ${req.path}`);
-        try {
-            const bodyStr = Buffer.from(response.data).toString();
-            console.error(`[PROXY] Error body:`, bodyStr);
-        } catch (e) {
-            // ignore
-        }
-    }
-
-    // Forward response headers
-    Object.entries(response.headers).forEach(([key, value]) => {
-      res.setHeader(key, value);
-    });
-
-    res.status(response.status).send(response.data);
-  } catch (err) {
-    console.error(`[PROXY] Error proxying to ${targetUrl}:`, err.message);
-    res.status(502).json({ error: 'ProxyError', message: err.message });
-  }
-};
-
-// Catch-all for any unimplemented app.bsky.* calls (Read-only)
-app.get(/^\/xrpc\/app\.bsky\..*/, async (req, res) => {
-  await proxyRequest(req, res, DEFAULT_APPVIEW);
-});
-
-// Explicit proxying via atproto-proxy header
-app.all(/^\/xrpc\/.*/, async (req, res, next) => {
-  const proxyTargetDid = req.headers['atproto-proxy'];
-  if (!proxyTargetDid) return next();
-  
-  // For simplicity in this personal PDS, we proxy to bsky.social if any proxying is requested
-  // In a full implementation, we would resolve proxyTargetDid to its service endpoint
-  console.log(`[PROXY] Explicit request to proxy to ${proxyTargetDid}`);
-  await proxyRequest(req, res, DEFAULT_APPVIEW);
 });
 
 export default app;
