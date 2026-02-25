@@ -196,11 +196,12 @@ const auth = async (req, res, next) => {
     return res.status(401).json({ error: 'AuthenticationRequired' });
   }
   const [type, token] = authHeader.split(' ');
+  const jwtToken = token || type; // Handle both "Bearer <token>" and just "<token>"
   
   if (type === 'DPoP') {
     try {
-      const { jkt } = await validateDpop(req, token);
-      const payload = verifyToken(token);
+      const { jkt } = await validateDpop(req, jwtToken);
+      const payload = verifyToken(jwtToken);
       if (!payload || payload.cnf?.jkt !== jkt) {
         return res.status(401).json({ error: 'InvalidToken', message: 'DPoP binding mismatch' });
       }
@@ -212,7 +213,7 @@ const auth = async (req, res, next) => {
     }
   }
 
-  const payload = verifyToken(token);
+  const payload = verifyToken(jwtToken);
   if (!payload) {
     console.log(`Auth failed: Invalid token for ${req.url}`);
     return res.status(401).json({ error: 'InvalidToken' });
@@ -562,8 +563,8 @@ app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
   const user = req.user;
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
   
-  const accessJwt = createToken(user.did, user.handle);
-  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
+  const accessJwt = createToken(req.auth.sub, req.auth.handle);
+  res.json({ accessJwt, refreshJwt: accessJwt, handle: req.auth.handle, did: req.auth.sub });
 });
 
 app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
