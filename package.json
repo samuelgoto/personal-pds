@@ -19,13 +19,13 @@
     "@atproto/syntax": "^0.4.3",
     "@libsql/client": "^0.17.0",
     "axios": "^1.13.5",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@atproto/api": "^0.18.21",
-    "dotenv": "^17.3.1",
     "jest": "^30.2.0",
     "nock": "^14.0.11"
   }
