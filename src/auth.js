@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { createHash, createPublicKey, createPrivateKey, createECDH, verify as cryptoVerify } from 'crypto';
+import { createHash, createPublicKey, createPrivateKey, createECDH, verify as cryptoVerify, randomBytes } from 'crypto';
 import * as cryptoAtp from '@atproto/crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
