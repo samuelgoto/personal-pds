@@ -36,14 +36,15 @@ async function pingRelay(hostname) {
 let initialized = false;
 async function initialize() {
   if (initialized) return;
+  console.log('Checking environment variables...');
+  
+  const required = ['HANDLE', 'PDS_DID', 'PRIVATE_KEY', 'PASSWORD', 'TURSO_DATABASE_URL'];
+  const missing = required.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+
   console.log('Initializing PDS...');
-  if (!process.env.PASSWORD) {
-    throw new Error('PASSWORD environment variable is not set');
-  }
-  const dbUrl = process.env.TURSO_DATABASE_URL;
-  if (!dbUrl) {
-    throw new Error('TURSO_DATABASE_URL environment variable is not set');
-  }
   await initDb(db);
   await maybeInitRepo();
   initialized = true;

@@ -98,9 +98,7 @@ router.post('/oauth/authorize', async (req, res) => {
   params.set('code', code);
   if (state) params.set('state', state);
   
-  const host = getHost(req);
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  params.set('iss', `${protocol}://${host}`);
+  params.set('iss', req.user.issuer);
 
   if (response_mode === 'fragment') {
     url.hash = params.toString();
@@ -113,11 +111,9 @@ router.post('/oauth/authorize', async (req, res) => {
 });
 
 router.post('/oauth/token', async (req, res) => {
-    const { grant_type, code, redirect_uri, client_id, refresh_token, code_verifier } = req.body;
+    const { grant_type, code, client_id, refresh_token, code_verifier } = req.body;
     const user = req.user;
-    const host = getHost(req);
-    const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-    const issuer = `${protocol}://${host}`;
+    const issuer = user.issuer;
 
     const { jkt } = await validateDpop(req);
 
@@ -212,9 +208,7 @@ router.post('/oauth/token', async (req, res) => {
 router.get('/.well-known/oauth-authorization-server', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const host = getHost(req);
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}`;
+  const issuer = req.user.issuer;
   
   res.json({
     issuer,
@@ -240,9 +234,7 @@ router.get('/.well-known/oauth-authorization-server', async (req, res) => {
 router.get('/.well-known/oauth-protected-resource', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const host = getHost(req);
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}`;
+  const issuer = req.user.issuer;
 
   res.json({
     resource: issuer,
@@ -256,9 +248,7 @@ router.get('/.well-known/oauth-protected-resource', async (req, res) => {
 router.get('/.well-known/openid-configuration', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const host = getHost(req);
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const issuer = `${protocol}://${host}`;
+  const issuer = req.user.issuer;
 
   res.json({
     issuer,
@@ -275,16 +265,15 @@ router.get('/.well-known/openid-configuration', async (req, res) => {
 router.get('/.well-known/jwks.json', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const privKeyHex = process.env.PRIVATE_KEY;
-  if (!privKeyHex) return res.status(500).json({ error: 'NoPrivateKey' });
   
+  const user = req.user;
   const ecdh = createECDH('secp256k1');
-  ecdh.setPrivateKey(Buffer.from(privKeyHex, 'hex'));
+  ecdh.setPrivateKey(user.signing_key);
   const uncompressed = ecdh.getPublicKey();
   const x = uncompressed.slice(1, 33).toString('base64url');
   const y = uncompressed.slice(33, 65).toString('base64url');
 
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
   const did = keypair.did();
 
   res.json({

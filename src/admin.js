@@ -62,9 +62,9 @@ router.get('/', async (req, res) => {
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div class="card">
             <h2>Identity</h2>
-            <div class="stat"><span class="label">Handle</span><span class="value">${user?.handle || 'Not Initialized'}</span></div>
-            <div class="stat"><span class="label">DID</span><span class="value">${user?.did || 'N/A'}</span></div>
-            <div class="stat"><span class="label">PDS Domain</span><span class="value">${process.env.HANDLE || req.get('host')}</span></div>
+            <div class="stat"><span class="label">Handle</span><span class="value">${user.handle}</span></div>
+            <div class="stat"><span class="label">DID</span><span class="value">${user.did}</span></div>
+            <div class="stat"><span class="label">PDS Domain</span><span class="value">${user.host}</span></div>
         </div>
 
         <div class="card">

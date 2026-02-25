@@ -43,25 +43,30 @@ app.use(async (req, res, next) => {
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
   
-  if (!handle) {
-    throw new Error('HANDLE environment variable is not set');
-  }
-  
-  if (!did) {
-    throw new Error('PDS_DID environment variable is not set');
+  if (!handle || !did || !password) {
+    throw new Error('Crucial environment variables missing at runtime');
   }
   
   const root_cid = await getRootCid();
   if (!root_cid) {
     throw new Error('Repository not initialized. Check server startup logs.');
   }
+
+  const host = getHost(req);
+  const isProd = process.env.NODE_ENV === 'production' || !host.includes('localhost');
+  const protocol = (req.protocol === 'https' || isProd) ? 'https' : 'http';
   
   req.user = {
     handle,
     password,
     did,
     signing_key: Buffer.from(privKeyHex, 'hex'),
-    root_cid: root_cid.toString()
+    root_cid: root_cid.toString(),
+    email: process.env.EMAIL || `pds@${handle}`,
+    birthDate: process.env.BIRTHDATE || '1990-01-01',
+    protocol,
+    host,
+    issuer: `${protocol}://${host}`
   };
   next();
 });
@@ -70,17 +75,15 @@ app.use(oauth);
 app.use(admin);
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
-  const user = req.user;
-  const pdsDid = user?.did || (process.env.PDS_DID || '').trim();
+  const pdsDid = req.user.did;
   console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
   res.json({ availableUserDomains: [], did: pdsDid });
 });
 
 app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
-  const user = req.user;
   res.json({
-    did: user?.did || (process.env.PDS_DID || '').trim(),
-    endpoint: `https://${getHost(req)}`
+    did: req.user.did,
+    endpoint: req.user.issuer
   });
 });
 
@@ -94,10 +97,8 @@ app.get('/favicon.ico', (req, res) => {
 
 // Helper to get the current host safely
 export const getHost = (req) => {
-  if (process.env.HANDLE && process.env.HANDLE !== 'localhost') return process.env.HANDLE;
-  const host = req.get('host') || 'localhost';
-  console.log(`DEBUG: getHost derived host="${host}" from req.get("host")`);
-  return host;
+  if (req.user?.handle && req.user.handle !== 'localhost') return req.user.handle;
+  return req.get('host') || 'localhost';
 };
 
 const getBlobUrl = (req, blob) => {
@@ -163,14 +164,11 @@ app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, r
 });
 
 export const getDidDoc = async (req, host) => {
-  const pdsDid = process.env.PDS_DID?.trim();
-  if (!pdsDid) return null;
-  const privKeyHex = process.env.PRIVATE_KEY;
-  if (!privKeyHex) return null;
+  const user = req.user;
+  if (!user) return null;
 
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production' || !host.includes('localhost')) ? 'https' : 'http';
-  const serviceEndpoint = `${protocol}://${host}`;
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
+  const serviceEndpoint = `${user.protocol}://${host}`;
 
   return {
     "@context": [
@@ -178,20 +176,20 @@ export const getDidDoc = async (req, host) => {
         "https://w3id.org/security/multiconf/v1",
         "https://w3id.org/security/suites/secp256k1-2019/v1"
     ],
-    "id": pdsDid,
+    "id": user.did,
     "alsoKnownAs": [`at://${host}`],
     "verificationMethod": [
       {
-        "id": `${pdsDid}#atproto`,
+        "id": `${user.did}#atproto`,
         "type": "Multikey",
-        "controller": pdsDid,
+        "controller": user.did,
         "publicKeyMultibase": keypair.did().split(':').pop()
       }
     ],
-    "authentication": [`${pdsDid}#atproto`],
-    "assertionMethod": [`${pdsDid}#atproto`],
-    "capabilityInvocation": [`${pdsDid}#atproto`],
-    "capabilityDelegation": [`${pdsDid}#atproto`],
+    "authentication": [`${user.did}#atproto`],
+    "assertionMethod": [`${user.did}#atproto`],
+    "capabilityInvocation": [`${user.did}#atproto`],
+    "capabilityDelegation": [`${user.did}#atproto`],
     "service": [{
       "id": "#atproto_pds",
       "type": "AtprotoPersonalDataServer",
@@ -280,29 +278,23 @@ app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
 
 app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
   const user = req.user;
-  if (!user) return res.status(404).json({ error: 'UserNotFound' });
   
   const birthDateRes = await db.execute({
     sql: 'SELECT value FROM preferences WHERE key = ?',
     args: [`birthDate:${user.did}`]
   });
-  const birthDate = birthDateRes.rows[0]?.value || process.env.BIRTHDATE || '1990-01-01';
-  const email = process.env.EMAIL || `pds@${user.handle}`;
+  const birthDate = birthDateRes.rows[0]?.value || user.birthDate;
 
   res.json({
     handle: user.handle,
     did: user.did,
-    email: email,
+    email: user.email,
     emailConfirmed: true,
     birthDate: birthDate,
   });
 });
 
 app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
-  const user = req.user;
-  if (!user) {
-    return res.status(404).json({ error: 'UserNotFound', message: 'User or Repository not initialized' });
-  }
   res.json({
     activated: true,
     validEmail: true,
@@ -316,12 +308,11 @@ app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
-  const host = getHost(req);
-  const didDoc = await getDidDoc(req, host);
+  const didDoc = await getDidDoc(req, req.user.host);
   res.json({ 
     handle: req.auth.handle, 
     did: req.auth.sub,
-    email: process.env.EMAIL || `pds@${req.auth.handle}`,
+    email: req.user.email,
     emailConfirmed: true,
     active: true,
     status: 'active',
@@ -369,41 +360,28 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
 
 app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     const { repo, collection, record, rkey } = req.body;
-    const user = req.user;
-    if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
+    if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
     // ATProto nuance: records from clients often have CID strings. 
     // They MUST be CID objects for proper Tag 42 storage.
     const fixedRecord = fixCids(record);
 
     const storage = new TursoStorage();
-    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(req.user.signing_key));
+    const repoObj = await Repo.load(storage, CID.parse(req.user.root_cid));
     
     const finalRkey = rkey || createTid();
     const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Create, collection, rkey: finalRkey, record: fixedRecord }], keypair);
     
     const recordCid = await updatedRepo.data.get(collection + '/' + finalRkey);
-    if (!recordCid) {
-        console.error(`Failed to find CID in MST for path: ${collection}/${finalRkey}`);
-    }
-
-    // Nuance: Firehose events should ideally only contain the NEW blocks (the diff)
     const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
-
-    // Ensure we have a proper CID object for the ops
     const opCid = typeof recordCid === 'string' ? CID.parse(recordCid) : recordCid;
-    console.log(`DEBUG: opCid for firehose:`, {
-        type: typeof opCid,
-        isCid: !!(opCid?.asCID === opCid || opCid?._Symbol_for_multiformats_cid),
-        val: opCid?.toString()
-    });
 
     await sequencer.sequenceEvent({
       type: 'commit',
-      did: user.did,
+      did: req.user.did,
       event: {
-        repo: user.did,
+        repo: req.user.did,
         commit: updatedRepo.cid,
         blocks: blocks,
         rev: updatedRepo.commit.rev,
@@ -417,7 +395,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     });
     
     res.json({ 
-        uri: `at://${user.did}/${collection}/${finalRkey}`, 
+        uri: `at://${req.user.did}/${collection}/${finalRkey}`, 
         cid: recordCid?.toString() || updatedRepo.cid.toString(),
         commit: {
             cid: updatedRepo.cid.toString(),
@@ -428,31 +406,24 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
 
 app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
   const { repo, collection, rkey, record } = req.body;
-  const user = req.user;
-  if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
+  if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
   const fixedRecord = fixCids(record);
 
   const storage = new TursoStorage();
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-  const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(req.user.signing_key));
+  const repoObj = await Repo.load(storage, CID.parse(req.user.root_cid));
 
   const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Update, collection, rkey, record: fixedRecord }], keypair);
   const recordCid = await updatedRepo.data.get(collection + '/' + rkey);
-  if (!recordCid) {
-      console.error(`Failed to find CID in MST for path: ${collection}/${rkey}`);
-  }
-
   const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
-
-  // Ensure we have a proper CID object
   const opCid = typeof recordCid === 'string' ? CID.parse(recordCid) : recordCid;
 
   await sequencer.sequenceEvent({
     type: 'commit',
-    did: user.did,
+    did: req.user.did,
     event: {
-      repo: user.did,
+      repo: req.user.did,
       commit: updatedRepo.cid,
       blocks: blocks,
       rev: updatedRepo.commit.rev,
@@ -466,7 +437,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
   });
   
   res.json({ 
-      uri: `at://${user.did}/${collection}/${rkey}`, 
+      uri: `at://${req.user.did}/${collection}/${rkey}`, 
       cid: recordCid?.toString() || updatedRepo.cid.toString(),
       commit: {
           cid: updatedRepo.cid.toString(),
@@ -477,22 +448,20 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
 
 app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
   const { repo, collection, rkey } = req.body;
-  const user = req.user;
-  if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
+  if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
   
   const storage = new TursoStorage();
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-  const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(req.user.signing_key));
+  const repoObj = await Repo.load(storage, CID.parse(req.user.root_cid));
   
   const updatedRepo = await repoObj.applyWrites([{ action: WriteOpAction.Delete, collection, rkey }], keypair);
-
   const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
   await sequencer.sequenceEvent({
     type: 'commit',
-    did: user.did,
+    did: req.user.did,
     event: {
-      repo: user.did,
+      repo: req.user.did,
       commit: updatedRepo.cid,
       blocks: blocks,
       rev: updatedRepo.commit.rev,
@@ -509,13 +478,12 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
 });
 
 app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
-  const { repo, writes, swapCommit } = req.body;
-  const user = req.user;
-  if (!user || repo !== user.did) return res.status(403).json({ error: 'InvalidRepo' });
+  const { repo, writes } = req.body;
+  if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
   const storage = new TursoStorage();
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-  const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(req.user.signing_key));
+  const repoObj = await Repo.load(storage, CID.parse(req.user.root_cid));
 
   const repoWrites = writes.map(w => {
       if (w.$type === 'com.atproto.repo.applyWrites#create') {
@@ -547,10 +515,10 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
   const blocks = await blocksToCarFile(updatedRepo.cid, storage.newBlocks);
 
   await sequencer.sequenceEvent({
-    did: user.did,
+    did: req.user.did,
     type: 'commit',
     event: {
-      repo: user.did,
+      repo: req.user.did,
       commit: updatedRepo.cid,
       blocks: blocks,
       rev: updatedRepo.commit.rev,
@@ -567,9 +535,6 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
 });
 
 app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
-  const user = req.user;
-  if (!user) return res.status(403).json({ error: 'InvalidRepo' });
-
   const content = req.body;
   const mimeType = req.headers['content-type'] || 'application/octet-stream';
   
@@ -578,7 +543,7 @@ app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', l
 
   await db.execute({
     sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",
-    args: [cid, user.did, mimeType, content, new Date().toISOString()]
+    args: [cid, req.user.did, mimeType, content, new Date().toISOString()]
   });
 
   res.json({
@@ -640,14 +605,13 @@ const getRecordHelper = async (repo, collection, rkey, user) => {
 };
 
 app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
-    const { repo, collection, limit, cursor } = req.query;
-    const user = req.user;
-    if (!user || (repo.toLowerCase() !== user.did.toLowerCase() && repo.toLowerCase() !== user.handle.toLowerCase())) {
+    const { repo, collection } = req.query;
+    if (repo.toLowerCase() !== req.user.did.toLowerCase() && repo.toLowerCase() !== req.user.handle.toLowerCase()) {
         return res.status(404).json({ error: 'RepoNotFound' });
     }
 
     const storage = new TursoStorage();
-    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    const repoObj = await Repo.load(storage, CID.parse(req.user.root_cid));
     const entries = await repoObj.data.list(collection + '/');
     
     const records = [];
@@ -656,7 +620,7 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
         const value = await repoObj.getRecord(collection, rkey);
         if (value) {
             records.push({
-                uri: `at://${user.did}/${collection}/${rkey}`,
+                uri: `at://${req.user.did}/${collection}/${rkey}`,
                 cid: entry.value.toString(),
                 value
             });
@@ -672,23 +636,20 @@ app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
   
   if (!record) return res.status(404).json({ error: 'RecordNotFound' });
   
-  const user = req.user;
-  res.json({ uri: `at://${user.did}/${collection}/${rkey}`, value: record.value, cid: record.cid });
+  res.json({ uri: `at://${req.user.did}/${collection}/${rkey}`, value: record.value, cid: record.cid });
 });
 
 app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
     const { repo } = req.query;
-    const user = req.user;
-    if (!user || (repo !== user.did && repo !== user.handle)) {
+    if (repo !== req.user.did && repo !== req.user.handle) {
         return res.status(404).json({ error: 'RepoNotFound' });
     }
 
-    const host = getHost(req);
-    const didDoc = await getDidDoc(req, host);
+    const didDoc = await getDidDoc(req, req.user.host);
 
     res.json({
-        handle: user.handle,
-        did: user.did,
+        handle: req.user.handle,
+        did: req.user.did,
         didDoc: didDoc,
         collections: [
             'app.bsky.actor.profile',
@@ -703,8 +664,8 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.getRecord', async (req, res) => {
   const { did, collection, rkey } = req.query;
-  const pdsDid = (process.env.PDS_DID || '').trim();
-  if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+  const pdsDid = req.user.did;
+  if (did && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
 
   const storage = new TursoStorage();
   const rootCid = await getRootCid();
@@ -724,32 +685,24 @@ app.get('/xrpc/com.atproto.sync.getRecord', async (req, res) => {
 app.head('/xrpc/com.atproto.sync.getHead', (req, res) => res.status(200).end());
 app.get('/xrpc/com.atproto.sync.getHead', async (req, res) => {
   const { did } = req.query;
-  const user = req.user;
-  const pdsDid = user?.did;
-  console.log(`[SYNC] getHead: requested=${did}, authoritative=${pdsDid}`);
-  if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) {
-      console.log(`[SYNC] getHead: DID mismatch: ${did} !== ${pdsDid}`);
+  const pdsDid = req.user.did;
+  if (did && did.toLowerCase() !== pdsDid.toLowerCase()) {
       return res.status(404).json({ error: 'RepoNotFound' });
   }
 
   const rootCid = await getRootCid();
   if (!rootCid) {
-      console.log(`[SYNC] getHead: Root CID not found`);
       return res.status(404).json({ error: 'RepoNotFound' });
   }
 
-  res.setHeader('Content-Type', 'application/json');
   res.json({ root: rootCid });
 });
 
 app.head('/xrpc/com.atproto.sync.getLatestCommit', (req, res) => res.status(200).end());
 app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   const { did } = req.query;
-  const user = req.user;
-  const pdsDid = user?.did;
-  console.log(`TAP getLatestCommit: did=${did}, pdsDid=${pdsDid}`);
-  if (did && pdsDid && did !== pdsDid) {
-      console.log(`TAP getLatestCommit: DID mismatch: ${did} !== ${pdsDid}`);
+  const pdsDid = req.user.did;
+  if (did && did !== pdsDid) {
       return res.status(404).json({ error: 'RepoNotFound' });
   }
 
@@ -759,12 +712,10 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   });
 
   if (result.rows.length === 0 || !rootCid) {
-      console.log(`TAP getLatestCommit: No sequencer event or Root CID found`);
       return res.status(404).json({ error: 'RepoNotFound' });
   }
   const event = cborDecode(new Uint8Array(result.rows[0].event));
 
-  res.setHeader('Content-Type', 'application/json');
   res.json({
       cid: rootCid,
       rev: event.rev,
@@ -777,9 +728,8 @@ app.get('/xrpc/_health', (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
   const { did } = req.query;
-  const user = req.user;
-  const pdsDid = user?.did;
-  if (did && pdsDid && did.toLowerCase() !== pdsDid.toLowerCase()) {
+  const pdsDid = req.user.did;
+  if (did && did.toLowerCase() !== pdsDid.toLowerCase()) {
     return res.status(404).json({ error: 'RepoNotFound' });
   }
 
@@ -802,22 +752,22 @@ app.get('/xrpc/com.atproto.sync.getRepoStatus', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.sync.listRepos', async (req, res) => {
-  const user = req.user;
-  const pdsDid = user?.did;
+  const pdsDid = req.user.did;
   const rootCid = await getRootCid();
-  if (!pdsDid || !rootCid) {
-      console.log(`TAP listRepos: PDS_DID or Root CID not found`);
+  if (!rootCid) {
       return res.json({ repos: [] });
   }
 
   res.json({
-      repos: [{
-          did: pdsDid,
-          head: rootCid,
-      }]
+    repos: [
+      {
+        did: pdsDid,
+        head: rootCid.toString(),
+        rev: '0'
+      }
+    ]
   });
 });
-
 // WebSocket Firehose for subscribeRepos
 app.get('/xrpc/com.atproto.sync.subscribeRepos', async (req, res) => {
   // If this is a regular HTTP request, provide a helpful message
@@ -849,10 +799,9 @@ app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
-  const { did, since } = req.query;
-  const user = req.user;
-  const pdsDid = user?.did;
-  if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+  const { did } = req.query;
+  const pdsDid = req.user.did;
+  if (did && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();
   if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });
@@ -867,9 +816,8 @@ app.get('/xrpc/com.atproto.sync.getRepo', async (req, res) => {
 
 app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
   const { did } = req.query;
-  const user = req.user;
-  const pdsDid = user?.did;
-  if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
+  const pdsDid = req.user.did;
+  if (did && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
   
   const rootCid = await getRootCid();
   if (!rootCid) return res.status(404).json({ error: 'RepoNotFound' });

@@ -135,13 +135,13 @@ export async function validateDpop(req, access_token = null) {
   }
 
   // Basic DPoP claim verification
-  const { htu, htm, iat, jti } = decoded.payload;
+  const { htu, htm } = decoded.payload;
   if (htm !== req.method) {
     throw new Error('DPoP htm mismatch');
   }
 
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production') ? 'https' : 'http';
-  const host = req.get('host');
+  const protocol = req.user?.protocol || (req.protocol === 'https' || process.env.NODE_ENV === 'production' ? 'https' : 'http');
+  const host = req.user?.host || req.get('host');
   const path = (req.originalUrl || req.url).split('?')[0];
   const expectedHtu = `${protocol}://${host}${path}`;
 
