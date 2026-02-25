@@ -1864,37 +1864,81 @@ app.get('/xrpc/app.bsky.graph.getFollows', async (req, res, next) => {
   try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
-    
-    // Fall through if not local
-    if (user && actor !== user.did && actor !== user.handle) {
+    const targetDid = req.headers['atproto-proxy'] || 'did:web:api.bsky.app#bsky_appview';
+    const targetUrl = await resolveServiceEndpoint(targetDid);
+
+    // If not local user, just proxy
+    if (!user || (actor !== user.did && actor !== user.handle)) {
         return next();
     }
 
-    let profile = undefined;
-    if (user && (actor === user.did || actor === user.handle)) {
-        profile = {
-            did: user.did,
-            handle: user.handle,
-            indexedAt: new Date().toISOString(),
-        };
+    console.log(`[FOLLOWS] Fetching hybrid follows for: ${actor}`);
+
+    // 1. Fetch from AppView
+    let globalFollows = [];
+    let subject = { did: user.did, handle: user.handle };
+    try {
+        const globalRes = await axios.get(`${targetUrl}/xrpc/app.bsky.graph.getFollows`, {
+            params: req.query,
+            timeout: 3000
+        });
+        globalFollows = globalRes.data.follows || [];
+        subject = globalRes.data.subject || subject;
+    } catch (e) {
+        console.warn('[FOLLOWS] Failed to fetch global follows');
+    }
+
+    // 2. Merge local follows (ensure everything we followed locally is in the list)
+    const storage = new TursoStorage();
+    const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
+    for await (const rec of repoObj.walkRecords()) {
+        if (rec.collection === 'app.bsky.graph.follow') {
+            const followedDid = rec.record.subject;
+            const alreadyPresent = globalFollows.some(f => f.did === followedDid);
+            if (!alreadyPresent) {
+                globalFollows.unshift({
+                    did: followedDid,
+                    handle: 'unknown', // Profile would be hydrated by AppView eventually
+                    displayName: '',
+                    viewer: { muted: false, blockedBy: false },
+                    indexedAt: rec.record.createdAt || new Date().toISOString()
+                });
+            }
+        }
     }
 
     res.json({
-        follows: [],
-        subject: profile,
+        follows: globalFollows,
+        subject: subject,
     });
   } catch (err) {
+    console.error('Error in getFollows:', err);
     res.status(500).json({ error: 'InternalServerError' });
   }
 });
 
 app.get('/xrpc/app.bsky.graph.getFollowers', async (req, res, next) => {
-  const { actor } = req.query;
-  const user = await getSingleUser(req);
-  if (user && actor !== user.did && actor !== user.handle) {
-      return next();
+  try {
+    const { actor } = req.query;
+    const user = await getSingleUser(req);
+    
+    // For followers, the AppView is always the source of truth for a single-user PDS
+    // We just ensure we proxy it even for the local user.
+    console.log(`[FOLLOWERS] Proxying followers request for: ${actor}`);
+    const targetDid = req.headers['atproto-proxy'] || 'did:web:api.bsky.app#bsky_appview';
+    const targetUrl = await resolveServiceEndpoint(targetDid);
+    
+    const response = await axios.get(`${targetUrl}/xrpc/app.bsky.graph.getFollowers`, {
+        params: req.query,
+        timeout: 3000,
+        validateStatus: () => true
+    });
+
+    res.status(response.status).send(response.data);
+  } catch (err) {
+    console.error('Error in getFollowers:', err);
+    res.status(500).json({ error: 'InternalServerError' });
   }
-  res.json({ followers: [] });
 });
 
 app.get('/xrpc/app.bsky.graph.getSuggestedFollowsByActor', async (req, res, next) => {
