@@ -141,11 +141,10 @@ const auth = async (req, res, next) => {
 
 // --- Endpoints ---
 app.get('/.well-known/atproto-did', async (req, res) => {
-  const pdsDid = (process.env.PDS_DID || '').trim();
   res.setHeader('Content-Type', 'text/plain');
   res.setHeader('Cache-Control', 'no-cache');
   // Use res.write and res.end to ensure absolutely no extra formatting
-  res.write(pdsDid);
+  res.write(req.user.did);
   res.end();
 });
 
