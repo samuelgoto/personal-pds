@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
 import { cborDecode, lastRelayPing } from './util.js';
-import { getHost, getPreference } from './server.js';
+import { getHost } from './server.js';
 
 const router = express.Router();
 
@@ -139,7 +139,6 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/debug/reset', async (req, res) => {
-  try {
     const { password } = req.body;
     const user = req.user;
     if (!password || !user || password !== user.password) {
@@ -153,10 +152,6 @@ router.post('/debug/reset', async (req, res) => {
     await db.execute('DELETE FROM sessions');
     
     res.send('<h1>Success</h1><p>PDS has been wiped clean.</p><a href="/">Back to Dashboard</a>');
-  } catch (err) {
-    res.status(500).send(`<h1>Error</h1><p>${err.message}</p>`);
-  }
 });
-
 
 export default router;

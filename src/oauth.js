@@ -113,7 +113,6 @@ router.post('/oauth/authorize', async (req, res) => {
 });
 
 router.post('/oauth/token', async (req, res) => {
-  try {
     const { grant_type, code, redirect_uri, client_id, refresh_token, code_verifier } = req.body;
     const user = req.user;
     const host = getHost(req);
@@ -208,10 +207,6 @@ router.post('/oauth/token', async (req, res) => {
     } else {
       res.status(400).json({ error: 'unsupported_grant_type' });
     }
-  } catch (err) {
-    console.error('OAuth token error:', err.message);
-    res.status(400).json({ error: 'invalid_request', message: err.message });
-  }
 });
 
 router.get('/.well-known/oauth-authorization-server', async (req, res) => {
