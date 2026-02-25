@@ -4,6 +4,7 @@ import axios from 'axios';
 import { initDb, db } from './db.js';
 import app, { wss } from './server.js';
 import { setLastRelayPing } from './util.js';
+import { maybeInitRepo } from './repo.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -44,6 +45,7 @@ async function initialize() {
     throw new Error('TURSO_DATABASE_URL environment variable is not set');
   }
   await initDb(db);
+  await maybeInitRepo();
   initialized = true;
   console.log('Initialization complete.');
 }

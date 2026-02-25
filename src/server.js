@@ -38,12 +38,28 @@ app.use(express.urlencoded({ extended: true }));
 
 // --- PDS User Context Middleware ---
 app.use(async (req, res, next) => {
-  try {
-    req.user = await getSingleUser(req);
-    next();
-  } catch (err) {
-    next(err);
+  const handle = process.env.HANDLE || 'localhost.test';
+  const did = (process.env.PDS_DID || formatDid(handle.split(':')[0])).trim();
+  const privKeyHex = process.env.PRIVATE_KEY;
+  const password = process.env.PASSWORD;
+  
+  if (!password) {
+    throw new Error('PASSWORD environment variable is not set');
   }
+  
+  const root_cid = await getRootCid();
+  if (!root_cid) {
+    throw new Error('Repository not initialized. Check server startup logs.');
+  }
+  
+  req.user = {
+    handle,
+    password,
+    did,
+    signing_key: Buffer.from(privKeyHex, 'hex'),
+    root_cid: root_cid.toString()
+  };
+  next();
 });
 
 app.use(oauth);
@@ -88,35 +104,6 @@ const getBlobUrl = (req, blob) => {
 };
 
 // Helper to get the single allowed user from Env
-export const getSingleUser = async (req = null) => {
-  const handle = process.env.HANDLE || 'localhost.test';
-  
-  const did = (process.env.PDS_DID || formatDid(handle.split(':')[0])).trim();
-
-  const privKeyHex = process.env.PRIVATE_KEY;
-  const password = process.env.PASSWORD;
-  
-  if (!password) {
-    throw new Error('PASSWORD environment variable is not set');
-  }
-  
-  let root_cid = await getRootCid();
-  if (!root_cid) {
-    console.log('No repository found. Auto-initializing...');
-    await maybeInitRepo();
-    root_cid = await getRootCid();
-  }
-  
-  if (!root_cid) return null;
-
-  return {
-    handle,
-    password,
-    did,
-    signing_key: Buffer.from(privKeyHex, 'hex'),
-    root_cid: root_cid.toString() // Ensure it is a string
-  };
-};
 
 const auth = async (req, res, next) => {
   res.setHeader('Content-Type', 'application/json');
@@ -617,8 +604,7 @@ app.get('/xrpc/com.atproto.sync.getBlob', async (req, res) => {
 });
 
 // Helper to get a single record from the local repo
-const getRecordHelper = async (repo, collection, rkey, userContext = null) => {
-  const user = userContext || await getSingleUser(); 
+const getRecordHelper = async (repo, collection, rkey, user) => {
   if (!user) {
     console.log('[HELPER] No user found');
     return null;
