@@ -627,6 +627,48 @@ app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
   });
 });
 
+app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
+  try {
+    const prefsJson = await getSystemMeta(`prefs:${req.auth.sub}`);
+    let preferences = prefsJson ? JSON.parse(prefsJson) : [];
+    
+    // ATProto nuance: PDS is the source of truth for user preferences
+    if (!preferences.find(p => p.$type === 'app.bsky.actor.defs#adultContentPref')) {
+        preferences.push({
+            $type: 'app.bsky.actor.defs#adultContentPref',
+            enabled: true
+        });
+    }
+
+    res.json({ preferences });
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
+app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
+  try {
+    const { preferences } = req.body;
+    
+    // Extract and store birthDate if provided in personalDetailsPref
+    const personalDetailsPref = preferences.find(p => p.$type === 'app.bsky.actor.defs#personalDetailsPref');
+    if (personalDetailsPref?.birthDate) {
+        await db.execute({
+            sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+            args: [`birthDate:${req.auth.sub}`, personalDetailsPref.birthDate]
+        });
+    }
+
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES (?, ?)",
+      args: [`prefs:${req.auth.sub}`, JSON.stringify(preferences)]
+    });
+    res.json({});
+  } catch (err) {
+    res.status(500).json({ error: 'InternalServerError' });
+  }
+});
+
 app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
   try {
     const { repo, collection, record, rkey } = req.body;
