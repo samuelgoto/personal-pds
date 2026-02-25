@@ -1354,6 +1354,26 @@ const getLikesForPosts = async (repoObj, userDid) => {
   return likes;
 };
 
+// Helper to get reposts for a set of posts
+const getRepostsForPosts = async (repoObj, userDid) => {
+  const reposts = new Map();
+  for await (const rec of repoObj.walkRecords()) {
+    if (rec.collection === 'app.bsky.feed.repost') {
+      const subjectUri = rec.record.subject?.uri;
+      if (subjectUri) {
+        if (!reposts.has(subjectUri)) {
+          reposts.set(subjectUri, { count: 0, viewerRepost: null });
+        }
+        const entry = reposts.get(subjectUri);
+        entry.count++;
+        // In this single-user PDS, if the record is in our repo, it's the owner's repost
+        entry.viewerRepost = `at://${userDid}/app.bsky.feed.repost/${rec.rkey}`;
+      }
+    }
+  }
+  return reposts;
+};
+
 const getAuthorFeed = async (req, res, next, actor, limit) => {
   try {
     const user = await getSingleUser(req);
@@ -1366,6 +1386,7 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
     const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
     const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     const likesMap = await getLikesForPosts(repoObj, user.did);
+    const repostsMap = await getRepostsForPosts(repoObj, user.did);
     
     const author = {
         did: user.did,
@@ -1389,6 +1410,7 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
       if (rec.collection === 'app.bsky.feed.post') {
         const postUri = `at://${user.did}/${rec.collection}/${rec.rkey}`;
         const likeInfo = likesMap.get(postUri) || { count: 0, viewerLike: undefined };
+        const repostInfo = repostsMap.get(postUri) || { count: 0, viewerRepost: undefined };
         feed.push({
             post: {
                 uri: postUri,
@@ -1396,19 +1418,78 @@ const getAuthorFeed = async (req, res, next, actor, limit) => {
                 author,
                 record: rec.record,
                 replyCount: 0,
-                repostCount: 0,
+                repostCount: repostInfo.count,
                 likeCount: likeInfo.count,
                 indexedAt: rec.record.createdAt || new Date().toISOString(),
                 viewer: {
-                    like: likeInfo.viewerLike
+                    like: likeInfo.viewerLike,
+                    repost: repostInfo.viewerRepost
                 },
                 labels: [],
             }
         });
+      } else if (rec.collection === 'app.bsky.feed.repost') {
+        const subjectUri = rec.record.subject.uri;
+        const subjectCid = rec.record.subject.cid;
+        
+        // Try to fetch original post locally
+        const parts = subjectUri.replace('at://', '').split('/');
+        const repo = parts[0];
+        const collection = parts[1];
+        const rkey = parts[2];
+        
+        let originalPost = null;
+        let postAuthor = author;
+
+        if (repo === user.did || repo === user.handle) {
+            const postRecord = await repoObj.getRecord(collection, rkey);
+            if (postRecord) {
+                const likeInfo = likesMap.get(subjectUri) || { count: 0, viewerLike: undefined };
+                const repostInfo = repostsMap.get(subjectUri) || { count: 0, viewerRepost: undefined };
+                originalPost = {
+                    uri: subjectUri,
+                    cid: subjectCid,
+                    author: postAuthor,
+                    record: postRecord,
+                    replyCount: 0,
+                    repostCount: repostInfo.count,
+                    likeCount: likeInfo.count,
+                    indexedAt: postRecord.createdAt || new Date().toISOString(),
+                    viewer: {
+                        like: likeInfo.viewerLike,
+                        repost: repostInfo.viewerRepost
+                    },
+                    labels: [],
+                };
+            }
+        } else {
+            // It's an external post. For now we skip showing it in the feed if we can't find it locally,
+            // or we could potentially fetch it. 
+            // Simple approach: skip external reposts in the *author* feed for now if not implemented.
+            // But wait, the user wants to see their reposts.
+            // Let's try to fetch it from the network if it's external.
+            // We'll use getRecordHelper or similar.
+        }
+
+        if (originalPost) {
+            feed.push({
+                post: originalPost,
+                reason: {
+                    $type: 'app.bsky.feed.defs#reasonRepost',
+                    by: author,
+                    indexedAt: rec.record.createdAt || new Date().toISOString(),
+                }
+            });
+        }
       }
     }
     
-    feed.sort((a, b) => new Date(b.post.record.createdAt).getTime() - new Date(a.post.record.createdAt).getTime());
+    // Sort by the timestamp of the feed item (either post creation or repost timestamp)
+    feed.sort((a, b) => {
+        const timeA = a.reason ? a.reason.indexedAt : a.post.indexedAt;
+        const timeB = b.reason ? b.reason.indexedAt : b.post.indexedAt;
+        return new Date(timeB).getTime() - new Date(timeA).getTime();
+    });
 
     res.json({ 
         feed: feed.slice(0, parseInt(limit || '50', 10)),
@@ -1514,6 +1595,7 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     const profile = await repoObj.getRecord('app.bsky.actor.profile', 'self');
     const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
     const likesMap = await getLikesForPosts(repoObj, user.did);
+    const repostsMap = await getRepostsForPosts(repoObj, user.did);
 
     const author = {
         did: user.did,
@@ -1572,13 +1654,14 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
                   author,
                   record,
                   replyCount: directReplies.length,
-                  repostCount: 0,
+                  repostCount: repostsMap.get(canonicalUri)?.count || 0,
                   likeCount: likesMap.get(canonicalUri)?.count || 0,
                   quoteCount: 0,
                   bookmarkCount: 0,
                   indexedAt: record.createdAt || new Date().toISOString(),
                   viewer: {
-                    like: likesMap.get(canonicalUri)?.viewerLike
+                    like: likesMap.get(canonicalUri)?.viewerLike,
+                    repost: repostsMap.get(canonicalUri)?.viewerRepost
                   },
                   labels: []
                 },
@@ -1604,13 +1687,14 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
                         author, // In single user PDS, author is the same
                         record: reply.record,
                         replyCount: 0,
-                        repostCount: 0,
+                        repostCount: repostsMap.get(reply.uri)?.count || 0,
                         likeCount: likesMap.get(reply.uri)?.count || 0,
                         quoteCount: 0,
                         bookmarkCount: 0,
                         indexedAt: reply.record.createdAt || new Date().toISOString(),
                         viewer: {
-                            like: likesMap.get(reply.uri)?.viewerLike
+                            like: likesMap.get(reply.uri)?.viewerLike,
+                            repost: repostsMap.get(reply.uri)?.viewerRepost
                         },
                         labels: []
                     },
@@ -1636,13 +1720,14 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
                 author,
                 record,
                 replyCount: directReplies.length,
-                repostCount: 0,
+                repostCount: repostsMap.get(canonicalUri)?.count || 0,
                 likeCount: likesMap.get(canonicalUri)?.count || 0,
                 quoteCount: 0,
                 bookmarkCount: 0,
                 indexedAt: record.createdAt || new Date().toISOString(),
                 viewer: {
-                    like: likesMap.get(canonicalUri)?.viewerLike
+                    like: likesMap.get(canonicalUri)?.viewerLike,
+                    repost: repostsMap.get(canonicalUri)?.viewerRepost
                 },
                 labels: [],
             },
@@ -1654,13 +1739,14 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
                     author,
                     record: reply.record,
                     replyCount: 0,
-                    repostCount: 0,
+                    repostCount: repostsMap.get(reply.uri)?.count || 0,
                     likeCount: likesMap.get(reply.uri)?.count || 0,
                     quoteCount: 0,
                     bookmarkCount: 0,
                     indexedAt: reply.record.createdAt || new Date().toISOString(),
                     viewer: {
-                        like: likesMap.get(reply.uri)?.viewerLike
+                        like: likesMap.get(reply.uri)?.viewerLike,
+                        repost: repostsMap.get(reply.uri)?.viewerRepost
                     },
                     labels: [],
                 },
@@ -1882,6 +1968,7 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
     const storage = new TursoStorage();
     const repoObj = await Repo.load(storage, CID.parse(user.root_cid));
     const likesMap = await getLikesForPosts(repoObj, user.did);
+    const repostsMap = await getRepostsForPosts(repoObj, user.did);
 
     const author = {
         did: user.did,
@@ -1910,19 +1997,21 @@ app.get('/xrpc/app.bsky.feed.getPosts', async (req, res) => {
         const recordRes = await getRecordHelper(repo, collection, rkey);
         if (recordRes) {
             const likeInfo = likesMap.get(uri) || { count: 0, viewerLike: undefined };
+            const repostInfo = repostsMap.get(uri) || { count: 0, viewerRepost: undefined };
             posts.push({
                 uri,
                 cid: recordRes.cid,
                 author,
                 record: recordRes.value,
                 replyCount: 0, // Placeholder
-                repostCount: 0,
+                repostCount: repostInfo.count,
                 likeCount: likeInfo.count,
                 quoteCount: 0,
                 bookmarkCount: 0,
                 indexedAt: recordRes.value.createdAt || new Date().toISOString(),
                 viewer: {
-                    like: likeInfo.viewerLike
+                    like: likeInfo.viewerLike,
+                    repost: repostInfo.viewerRepost
                 },
                 labels: [],
             });
