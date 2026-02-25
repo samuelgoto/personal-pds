@@ -2023,27 +2023,38 @@ const DEFAULT_APPVIEW = process.env.APPVIEW_URL || 'https://bsky.social';
 
 const proxyRequest = async (req, res, targetUrl) => {
   try {
-    const headers = { ...req.headers };
-    delete headers.host;
-    delete headers.connection;
-    delete headers['content-length'];
+    const forwardHeaders = {};
+    const whitelist = [
+        'accept', 'accept-encoding', 'accept-language', 'user-agent',
+        'atproto-accept-labelers', 'atproto-content-type',
+        'content-type'
+    ];
     
-    // ATProto nuance: If we're proxying to an external AppView, 
-    // we should NOT forward our local PDS Authorization header (JWT).
-    // An external AppView won't be able to verify it.
-    delete headers.authorization;
+    for (const key of whitelist) {
+        if (req.headers[key]) forwardHeaders[key] = req.headers[key];
+    }
 
     console.log(`[PROXY] Forwarding ${req.method} ${req.path} -> ${targetUrl}`);
 
     const response = await axios({
       method: req.method,
-      url: `${targetUrl}${req.path}`, // Use req.path (no query string) instead of req.url
+      url: `${targetUrl}${req.path}`,
       data: (req.method === 'GET' || req.method === 'HEAD') ? undefined : req.body,
-      headers,
-      params: req.query, // Axios will handle query parameter serialization correctly
+      headers: forwardHeaders,
+      params: req.query,
       responseType: 'arraybuffer',
       validateStatus: () => true,
     });
+
+    if (response.status >= 400) {
+        console.error(`[PROXY] Target responded with error: ${response.status} for ${req.path}`);
+        try {
+            const bodyStr = Buffer.from(response.data).toString();
+            console.error(`[PROXY] Error body:`, bodyStr);
+        } catch (e) {
+            // ignore
+        }
+    }
 
     // Forward response headers
     Object.entries(response.headers).forEach(([key, value]) => {
