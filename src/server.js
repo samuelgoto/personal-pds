@@ -1699,9 +1699,7 @@ app.get('/xrpc/app.bsky.graph.getBlocks', auth, async (req, res, next) => {
 });
 
 app.get('/xrpc/app.bsky.actor.getSuggestions', auth, async (req, res, next) => {
-  // Global suggestions are better handled by the AppView if requested
-  if (req.headers['atproto-proxy']) return next();
-  res.json({ actors: [] });
+  return next();
 });
 
 app.get('/xrpc/app.bsky.notification.getUnreadCount', auth, async (req, res, next) => {
@@ -1714,27 +1712,22 @@ app.get('/xrpc/app.bsky.unspecced.getConfig', async (req, res, next) => {
 });
 
 app.get('/xrpc/app.bsky.labeler.getServices', async (req, res, next) => {
-  if (req.headers['atproto-proxy']) return next();
-  res.json({ views: [] });
+  return next();
 });
 
 app.get('/xrpc/app.bsky.ageassurance.getState', async (req, res, next) => {
   res.json({ status: 'verified' });
 });
 
-app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res, next) => {
-  if (req.headers['atproto-proxy']) return next();
+app.get('/xrpc/chat.bsky.convo.getLog', auth, async (req, res) => {
   res.json({ logs: [] });
 });
 
-app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res, next) => {
-  if (req.headers['atproto-proxy']) return next();
+app.get('/xrpc/chat.bsky.convo.listConvos', auth, async (req, res) => {
   res.json({ convos: [] });
 });
 
-app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res, next) => {
-  // If the app wants proxied notifications, let it pass through
-  if (req.headers['atproto-proxy']) return next();
+app.get('/xrpc/app.bsky.notification.listNotifications', auth, async (req, res) => {
   res.json({ 
     notifications: [], 
     cursor: undefined,
