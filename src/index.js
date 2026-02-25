@@ -3,6 +3,7 @@ import http from 'http';
 import axios from 'axios';
 import { initDb, db } from './db.js';
 import app, { wss } from './server.js';
+import { setLastRelayPing } from './util.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -20,10 +21,7 @@ async function pingRelay(hostname) {
     const res = await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
       hostname: hostname
     });
-    await db.execute({
-      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES ('last_relay_ping', ?)",
-      args: [new Date().toISOString()]
-    });
+    setLastRelayPing(new Date().toISOString());
     console.log('Relay notified successfully.');
     return { success: true, data: res.data };
   } catch (err) {

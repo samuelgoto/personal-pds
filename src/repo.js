@@ -206,11 +206,5 @@ export async function maybeInitRepo() {
     }
   });
 
-  await db.execute({
-
-    sql: "INSERT OR IGNORE INTO system_state (key, value) VALUES ('repo_created_at', ?)",
-    args: [new Date().toISOString()]
-  });
-
   console.log(`Repo auto-initialized successfully. Root CID: ${repo.cid.toString()}`);
 }

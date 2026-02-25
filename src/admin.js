@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from './db.js';
-import { cborDecode } from './util.js';
+import { cborDecode, lastRelayPing } from './util.js';
 import { getHost, getSystemMeta } from './server.js';
 
 const router = express.Router();
@@ -9,8 +9,7 @@ router.get('/', async (req, res) => {
   const user = req.user;
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
-  const lastPing = await getSystemMeta('last_relay_ping');
-  const repoCreatedAt = await getSystemMeta('repo_created_at');
+  const lastPing = lastRelayPing;
 
   // Get last 10 events
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
@@ -66,7 +65,6 @@ router.get('/', async (req, res) => {
             <div class="stat"><span class="label">Handle</span><span class="value">${user?.handle || 'Not Initialized'}</span></div>
             <div class="stat"><span class="label">DID</span><span class="value">${user?.did || 'N/A'}</span></div>
             <div class="stat"><span class="label">PDS Domain</span><span class="value">${process.env.HANDLE || req.get('host')}</span></div>
-            <div class="stat"><span class="label">Created At</span><span class="value">${repoCreatedAt || 'N/A'}</span></div>
         </div>
 
         <div class="card">
@@ -153,7 +151,6 @@ router.post('/debug/reset', async (req, res) => {
     await db.execute('DELETE FROM sequencer');
     await db.execute('DELETE FROM blobs');
     await db.execute('DELETE FROM sessions');
-    await db.execute("DELETE FROM system_state WHERE key = 'repo_created_at'");
     
     res.send('<h1>Success</h1><p>PDS has been wiped clean.</p><a href="/">Back to Dashboard</a>');
   } catch (err) {

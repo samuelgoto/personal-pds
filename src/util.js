@@ -6,6 +6,12 @@ import { CID } from 'multiformats/cid';
 import * as dagCbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
 
+export let lastRelayPing = null;
+
+export function setLastRelayPing(time) {
+  lastRelayPing = time;
+}
+
 export function fixCids(obj) {
   if (!obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(fixCids);
