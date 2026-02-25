@@ -1190,6 +1190,24 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   }
 });
 
+const fetchExternalPost = async (req, uri) => {
+  try {
+    const appView = 'https://bsky.social';
+    console.log(`[EXTERNAL] Fetching external post: ${uri}`);
+    const response = await axios.get(`${appView}/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0`, {
+        timeout: 5000
+    });
+    return response.data.thread.post;
+  } catch (err) {
+    console.error(`[EXTERNAL] Failed to fetch external post ${uri}: ${err.message}`);
+    return {
+        uri,
+        $type: 'app.bsky.feed.defs#notFoundPost',
+        notFound: true
+    };
+  }
+};
+
 const getAuthorFeed = async (req, res, actor, limit) => {
   try {
     const user = await getSingleUser(req);
