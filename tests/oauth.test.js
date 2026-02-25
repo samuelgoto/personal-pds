@@ -4,12 +4,12 @@ import http from 'http';
 import axios from 'axios';
 import app, { wss } from '../src/server.js';
 import { initDb, createDb, setDb } from '../src/db.js';
+import { maybeInitRepo } from '../src/repo.js';
 import { sequencer } from '../src/sequencer.js';
 import * as cryptoAtp from '@atproto/crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { runFullSetup } from '../src/setup.js';
 import { createHash, randomBytes } from 'crypto';
 import jwt from 'jsonwebtoken';
 import nock from 'nock';
@@ -79,7 +79,7 @@ describe('ATProto OAuth Implementation Tests', () => {
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
 
-    await runFullSetup({ db: testDb, skipPlc: true });
+    await initDb(testDb); await maybeInitRepo();
     userDid = process.env.PDS_DID;
 
     server = http.createServer(app);

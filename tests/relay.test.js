@@ -13,7 +13,6 @@ import { readCarWithRoot } from '@atproto/repo';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { runFullSetup } from '../src/setup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,7 +38,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
 
-    await runFullSetup({ db: testDb, skipPlc: true });
+    await initDb(testDb); await maybeInitRepo();
     userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);

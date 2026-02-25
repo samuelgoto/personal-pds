@@ -4,12 +4,12 @@ import http from 'http';
 import axios from 'axios';
 import nock from 'nock';
 import app, { wss } from '../src/server.js';
-import { createDb, setDb } from '../src/db.js';
+import { initDb, createDb, setDb } from '../src/db.js';
+import { maybeInitRepo } from '../src/repo.js';
 import { sequencer } from '../src/sequencer.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { runFullSetup } from '../src/setup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,7 +34,7 @@ describe('ATProto XRPC Lexicon Compliance', () => {
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
 
-    await runFullSetup({ db: testDb, skipPlc: true });
+    await initDb(testDb); await maybeInitRepo();
     userDid = process.env.PDS_DID;
 
     server = http.createServer(app);

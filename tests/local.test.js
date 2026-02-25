@@ -12,7 +12,6 @@ import { WebSocket } from 'ws';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { runFullSetup } from '../src/setup.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,7 +37,7 @@ describe('PDS Local Tests', () => {
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
 
-    await runFullSetup({ db: testDb, skipPlc: true });
+    await initDb(testDb); await maybeInitRepo();
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {
