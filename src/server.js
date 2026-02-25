@@ -505,6 +505,9 @@ app.get('/', async (req, res) => {
         .value { font-family: monospace; color: #666; }
         .status-ok { color: #28a745; font-weight: bold; }
         .status-warn { color: #dc3545; font-weight: bold; }
+        .danger-zone { border: 2px solid #dc3545; padding: 20px; border-radius: 8px; margin-top: 40px; }
+        button { background: #dc3545; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #c82333; }
     </style>
 </head>
 <body>
@@ -540,10 +543,39 @@ app.get('/', async (req, res) => {
         <div class="stat"><span class="label">Node.js Version</span><span class="value">${process.version}</span></div>
         <div class="stat"><span class="label">Database Type</span><span class="value">Turso/libSQL</span></div>
     </div>
+
+    <div class="danger-zone">
+        <h2>Danger Zone</h2>
+        <p>Wiping the PDS will delete all posts, follows, likes, and profile data from the database. This action is irreversible.</p>
+        <form action="/debug/reset" method="POST" onsubmit="return confirm('ARE YOU SURE? This will permanently delete all your data.')">
+            <input type="password" name="password" placeholder="Enter PDS Password" required style="padding: 10px; margin-right: 10px; border: 1px solid #ccc; border-radius: 4px;">
+            <button type="submit">Wipe PDS Data</button>
+        </form>
+    </div>
 </body>
 </html>
   `;
   res.send(html);
+});
+
+app.post('/debug/reset', async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password !== process.env.PASSWORD) {
+        return res.status(403).send('<h1>Forbidden</h1><p>Incorrect password.</p><a href="/">Back to Dashboard</a>');
+    }
+
+    console.log('Wiping ALL PDS data via Web UI...');
+    await db.execute('DELETE FROM repo_blocks');
+    await db.execute('DELETE FROM sequencer');
+    await db.execute('DELETE FROM blobs');
+    await db.execute('DELETE FROM sessions');
+    await db.execute("DELETE FROM system_state WHERE key = 'repo_created_at'");
+    
+    res.send('<h1>Success</h1><p>PDS has been wiped clean.</p><a href="/">Back to Dashboard</a>');
+  } catch (err) {
+    res.status(500).send(`<h1>Error</h1><p>${err.message}</p>`);
+  }
 });
 
 app.get('/debug/ping-relay', async (req, res) => {
