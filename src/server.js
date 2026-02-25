@@ -1424,8 +1424,15 @@ const getQuotesForPosts = async (repoObj) => {
   for await (const rec of repoObj.walkRecords()) {
     if (rec.collection === 'app.bsky.feed.post') {
       const embed = rec.record.embed;
+      let targetUri = null;
       if (embed?.$type === 'app.bsky.embed.record' && embed.record?.uri) {
-        const targetUri = embed.record.uri;
+          targetUri = embed.record.uri;
+      } else if (embed?.$type === 'app.bsky.embed.recordWithMedia' && embed.record?.record?.uri) {
+          targetUri = embed.record.record.uri;
+      }
+
+      if (targetUri) {
+        console.log(`[DEBUG] Found quote for: ${targetUri}`);
         quotes.set(targetUri, (quotes.get(targetUri) || 0) + 1);
       }
     }
@@ -1722,7 +1729,7 @@ const getPostThread = async (req, res, next, uri, isV2 = false) => {
     const likesMap = await getLikesForPosts(repoObj, user.did);
     const repostsMap = await getRepostsForPosts(repoObj, user.did);
     const quotesMap = await getQuotesForPosts(repoObj);
-
+    
     // Find replies in the repository
     const allPostEntries = await repoObj.data.list('app.bsky.feed.post/');
     const directReplies = [];
