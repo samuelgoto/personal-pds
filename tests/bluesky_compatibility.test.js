@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = 3007;
 const HOST = `http://localhost:${PORT}`;
-const DOMAIN = `localhost`; // Clean domain for tests
+const HANDLE_VAR = `localhost`; // Clean domain for tests
 
 describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
   let server;
@@ -31,14 +31,14 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
     process.env.PASSWORD = 'compat-pass';
-    process.env.DOMAIN = 'localhost';
+    process.env.HANDLE = 'localhost.test';
     const dbName = `compat-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
     testDb = createDb(`file:${dbPath}`);
     setDb(testDb);
 
     await runFullSetup({ db: testDb, skipPlc: true });
-    userDid = formatDid(DOMAIN);
+    userDid = formatDid('localhost.test');
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(PORT, resolve));
@@ -140,7 +140,7 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
   test('describeRepo should return correct handle and full didDoc', async () => {
     const res = await axios.get(`${HOST}/xrpc/com.atproto.repo.describeRepo?repo=${userDid}`);
     expect(res.status).toBe(200);
-    expect(res.data.handle).toBe(DOMAIN === 'localhost' ? 'localhost.test' : DOMAIN);
+    expect(res.data.handle).toBe(HANDLE_VAR === 'localhost' ? 'localhost.test' : HANDLE_VAR);
     expect(res.data.did).toBe(userDid);
     expect(res.data.didDoc.id).toBe(userDid);
     expect(res.data.handleIsCorrect).toBe(true);
@@ -150,12 +150,12 @@ describe('Bluesky Compatibility / Rigorous Identity Tests', () => {
     const res = await axios.get(`${HOST}/xrpc/app.bsky.actor.getProfile?actor=${userDid}`);
     expect(res.status).toBe(200);
     expect(res.data.did).toBe(userDid);
-    expect(res.data.handle).toBe(DOMAIN === 'localhost' ? 'localhost.test' : DOMAIN);
+    expect(res.data.handle).toBe(HANDLE_VAR === 'localhost' ? 'localhost.test' : HANDLE_VAR);
     expect(res.data.displayName).toBeDefined();
   });
 
   test('resolveHandle should be flexible', async () => {
-    const res = await axios.get(`${HOST}/xrpc/com.atproto.identity.resolveHandle?handle=${DOMAIN === 'localhost' ? 'localhost.test' : DOMAIN}`);
+    const res = await axios.get(`${HOST}/xrpc/com.atproto.identity.resolveHandle?handle=${HANDLE_VAR === 'localhost' ? 'localhost.test' : HANDLE_VAR}`);
     expect(res.status).toBe(200);
     expect(res.data.did).toBe(userDid);
   });

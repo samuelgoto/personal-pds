@@ -301,7 +301,7 @@ const getSystemMeta = async (key) => {
 
 // Helper to get the current host safely
 export const getHost = (req) => {
-  if (process.env.DOMAIN && process.env.DOMAIN !== 'localhost') return process.env.DOMAIN;
+  if (process.env.HANDLE && process.env.HANDLE !== 'localhost') return process.env.HANDLE;
   const host = req.get('host') || 'localhost';
   console.log(`DEBUG: getHost derived host="${host}" from req.get("host")`);
   return host;
@@ -316,10 +316,9 @@ const getBlobUrl = (req, blob) => {
 
 // Helper to get the single allowed user from Env
 const getSingleUser = async (req) => {
-  const domain = (process.env.DOMAIN || 'localhost').split(':')[0];
-  const handle = domain === 'localhost' ? 'localhost.test' : domain;
+  const handle = process.env.HANDLE || 'localhost.test';
   
-  const did = (process.env.PDS_DID || formatDid(domain)).trim();
+  const did = (process.env.PDS_DID || formatDid(handle.split(':')[0])).trim();
 
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
@@ -517,7 +516,7 @@ app.get('/', async (req, res) => {
         <h2>Identity</h2>
         <div class="stat"><span class="label">Handle</span><span class="value">${user?.handle || 'Not Initialized'}</span></div>
         <div class="stat"><span class="label">DID</span><span class="value">${user?.did || 'N/A'}</span></div>
-        <div class="stat"><span class="label">PDS Domain</span><span class="value">${process.env.DOMAIN || req.get('host')}</span></div>
+        <div class="stat"><span class="label">PDS Domain</span><span class="value">${process.env.HANDLE || req.get('host')}</span></div>
     </div>
 
     <div class="card">

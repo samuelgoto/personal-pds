@@ -127,7 +127,7 @@ export async function maybeInitRepo() {
   if (rootCid) return;
 
   const privKeyHex = process.env.PRIVATE_KEY;
-  const domain = (process.env.DOMAIN || 'localhost:3000').split(':')[0];
+  const domain = (process.env.HANDLE || 'localhost:3000').split(':')[0];
   const did = (process.env.PDS_DID || formatDid(domain)).trim();
   
   if (!privKeyHex) {

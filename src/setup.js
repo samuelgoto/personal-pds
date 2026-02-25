@@ -55,7 +55,7 @@ export async function runFullSetup(options = {}) {
   }
 
   // 4. Identity Setup (did:plc)
-  let domain = providedDomain || (process.env.DOMAIN || 'localhost:3000').split(':')[0];
+  let domain = providedDomain || (process.env.HANDLE || 'localhost:3000').split(':')[0];
   let pdsDid = process.env.PDS_DID;
 
   if (!pdsDid || !pdsDid.startsWith('did:plc:')) {

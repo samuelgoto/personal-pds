@@ -20,7 +20,7 @@ const __dirname = path.dirname(__filename);
 
 const PORT = 3008;
 const HOST = `http://localhost:${PORT}`;
-const DOMAIN = `localhost`;
+const HANDLE_VAR = `localhost`;
 
 
 /**
@@ -36,7 +36,7 @@ describe('ATProto OAuth Implementation Tests', () => {
   let userDid;
   let testDb;
   let dbPath;
-  const password = 'oauth-test-pass';
+  const password = 'oauth-pass';
 
   beforeAll(async () => {
     // Silence console for clean test output
@@ -73,7 +73,7 @@ describe('ATProto OAuth Implementation Tests', () => {
 
 
     process.env.PASSWORD = password;
-    process.env.DOMAIN = `localhost:${PORT}`;
+    process.env.HANDLE = `localhost:${PORT}`;
     const dbName = `oauth-${Date.now()}.db`;
 
     dbPath = path.join(__dirname, dbName);
@@ -81,7 +81,7 @@ describe('ATProto OAuth Implementation Tests', () => {
     setDb(testDb);
 
     await runFullSetup({ db: testDb, skipPlc: true });
-    userDid = formatDid(DOMAIN);
+    userDid = formatDid(process.env.HANDLE);
 
     server = http.createServer(app);
     await new Promise((resolve) => server.listen(PORT, resolve));
@@ -109,7 +109,7 @@ describe('ATProto OAuth Implementation Tests', () => {
       expect(res.status).toBe(200);
       
       const meta = res.data;
-      // Nuance: Issuer matches process.env.DOMAIN if provided, otherwise derived from request
+      // Nuance: Issuer matches process.env.HANDLE if provided, otherwise derived from request
       expect(meta.issuer).toBe(HOST);
       
       // Nuance: Required for modern atproto-labs/oauth libraries

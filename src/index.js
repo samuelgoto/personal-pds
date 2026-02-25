@@ -50,7 +50,7 @@ initialize().then(() => {
 
   serverInst.listen(PORT, () => {
     console.log(`Minimal PDS listening on port ${PORT}`);
-    const domain = process.env.DOMAIN || 'pds.sgo.to';
+    const domain = process.env.HANDLE || 'pds.sgo.to';
     
     // Proactively ping relay on startup
     setTimeout(async () => {

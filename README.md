@@ -4,7 +4,7 @@ A lightweight, single-user AT Protocol Personal Data Server (PDS) built with Nod
 
 ## Key Features
 
-- **Stateless Single-User Design**: No complex account management. Your identity is derived directly from environment variables (`DOMAIN`, `PDS_DID`, `PRIVATE_KEY`).
+- **Stateless Single-User Design**: No complex account management. Your identity is derived directly from environment variables (`HANDLE`, `PDS_DID`, `PRIVATE_KEY`).
 - **ATProto OAuth Support**: Full implementation of the modern ATProto OAuth flow, including:
   - **DPoP (Demonstrating Proof-of-Possession)** for secure token binding.
   - **PAR (Pushed Authorization Requests)** for improved security.
@@ -26,7 +26,7 @@ This project requires a **persistent hosting environment** (like Heroku, Railway
 
 ### 2. Environment Variables
 Copy `.env.example` to your deployment environment and configure:
-- `DOMAIN`: Your PDS domain (e.g., `pds.sgo.to`).
+- `HANDLE`: Your PDS domain (e.g., `pds.sgo.to`).
 - `PDS_DID`: Your primary account DID (e.g., `did:plc:...`).
 - `PRIVATE_KEY`: Your Secp256k1 private key (hex).
 - `TURSO_DATABASE_URL` & `TURSO_AUTH_TOKEN`: Your Turso credentials.
