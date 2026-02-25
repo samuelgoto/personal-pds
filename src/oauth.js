@@ -4,7 +4,7 @@ import { validateDpop, verifyToken } from './auth.js';
 import { createHash, randomBytes, createECDH } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
-import { getDidDoc } from './server.js';
+import { getDidDoc } from './util.js';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();

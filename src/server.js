@@ -9,7 +9,7 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { cborEncode, cborDecode, createTid, createBlobCid, fixCids } from './util.js';
+import { cborEncode, cborDecode, createTid, createBlobCid, fixCids, getDidDoc } from './util.js';
 import oauth from './oauth.js';
 import admin from './admin.js';
 import proxy from './proxy.js';
@@ -123,47 +123,13 @@ app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, r
   });
 });
 
-export const getDidDoc = async (req, host) => {
-  const user = req.user;
-  if (!user) return null;
-
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-  const serviceEndpoint = `${user.protocol}://${host}`;
-
-  return {
-    "@context": [
-        "https://www.w3.org/ns/did/v1",
-        "https://w3id.org/security/multiconf/v1",
-        "https://w3id.org/security/suites/secp256k1-2019/v1"
-    ],
-    "id": user.did,
-    "alsoKnownAs": [`at://${host}`],
-    "verificationMethod": [
-      {
-        "id": `${user.did}#atproto`,
-        "type": "Multikey",
-        "controller": user.did,
-        "publicKeyMultibase": keypair.did().split(':').pop()
-      }
-    ],
-    "authentication": [`${user.did}#atproto`],
-    "assertionMethod": [`${user.did}#atproto`],
-    "capabilityInvocation": [`${user.did}#atproto`],
-    "capabilityDelegation": [`${user.did}#atproto`],
-    "service": [{
-      "id": "#atproto_pds",
-      "type": "AtprotoPersonalDataServer",
-      "serviceEndpoint": serviceEndpoint
-    }]
-  };
-};
 
 app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
   const { did } = req.query;
   if (!did) return res.status(400).json({ error: 'InvalidRequest', message: 'Missing did' });
 
   if (did.toLowerCase() === req.user.did.toLowerCase()) {
-    const doc = await getDidDoc(req, req.user.host);
+    const doc = await getDidDoc(req.user, req.user.host);
     if (!doc) return res.status(404).json({ error: 'DidNotFound' });
     return res.json(doc);
   }
@@ -264,7 +230,7 @@ app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
 });
 
 app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
-  const didDoc = await getDidDoc(req, req.user.host);
+  const didDoc = await getDidDoc(req.user, req.user.host);
   res.json({ 
     handle: req.user.auth.handle, 
     did: req.user.auth.sub,
@@ -601,7 +567,7 @@ app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
         return res.status(404).json({ error: 'RepoNotFound' });
     }
 
-    const didDoc = await getDidDoc(req, req.user.host);
+    const didDoc = await getDidDoc(req.user, req.user.host);
 
     res.json({
         handle: req.user.handle,

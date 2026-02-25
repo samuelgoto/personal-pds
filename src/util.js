@@ -5,12 +5,47 @@ import { TID } from '@atproto/common';
 import { CID } from 'multiformats/cid';
 import * as dagCbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
+import * as crypto from '@atproto/crypto';
 
 export let lastRelayPing = null;
 
 export function setLastRelayPing(time) {
   lastRelayPing = time;
 }
+
+export const getDidDoc = async (user, host) => {
+  if (!user) return null;
+
+  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
+  const serviceEndpoint = `${user.protocol}://${host}`;
+
+  return {
+    "@context": [
+        "https://www.w3.org/ns/did/v1",
+        "https://w3id.org/security/multiconf/v1",
+        "https://w3id.org/security/suites/secp256k1-2019/v1"
+    ],
+    "id": user.did,
+    "alsoKnownAs": [`at://${host}`],
+    verificationMethod: [
+      {
+        "id": `${user.did}#atproto`,
+        "type": "Multikey",
+        "controller": user.did,
+        "publicKeyMultibase": keypair.did().split(':').pop()
+      }
+    ],
+    "authentication": [`${user.did}#atproto`],
+    "assertionMethod": [`${user.did}#atproto`],
+    "capabilityInvocation": [`${user.did}#atproto`],
+    "capabilityDelegation": [`${user.did}#atproto`],
+    "service": [{
+      "id": "#atproto_pds",
+      "type": "AtprotoPersonalDataServer",
+      "serviceEndpoint": serviceEndpoint
+    }]
+  };
+};
 
 export function fixCids(obj) {
   if (!obj || typeof obj !== 'object') return obj;
