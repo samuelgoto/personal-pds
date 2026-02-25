@@ -11,15 +11,36 @@ export function cborEncode(obj) {
   return cborg.encode(obj, {
     typeEncoders: {
       Object: (obj) => {
-        if (obj.asCID === obj || obj._Symbol_for_multiformats_cid) {
+        // Robustly identify CIDs (both multiformats instances and plain objects)
+        const isCid = obj.asCID === obj || 
+                      obj._Symbol_for_multiformats_cid ||
+                      (obj.code !== undefined && obj.version !== undefined && obj.hash !== undefined);
+
+        if (isCid) {
+          // Get the raw bytes
+          let bytes = obj.bytes;
+          if (!bytes) {
+            // If it's a plain object from a DB/JSON cycle, it might not have .bytes
+            // But it will have .code, .version, .hash
+            try {
+                // Try to reconstruct it to get the bytes
+                const cid = CID.create(obj.version, obj.code, obj.hash);
+                bytes = cid.bytes;
+            } catch (e) {
+                return undefined;
+            }
+          }
+
+          if (!bytes) return undefined;
+
           // ATProto CID tag 42: leading 0x00 followed by the raw multihash
-          const bytes = new Uint8Array(obj.bytes.length + 1);
-          bytes[0] = 0;
-          bytes.set(obj.bytes, 1);
+          const taggedBytes = new Uint8Array(bytes.length + 1);
+          taggedBytes[0] = 0;
+          taggedBytes.set(bytes, 1);
           // Manually return tokens for Tag 42
           return [
             new Token(Type.tag, 42),
-            new Token(Type.bytes, bytes)
+            new Token(Type.bytes, taggedBytes)
           ];
         }
         return undefined;
