@@ -1080,8 +1080,11 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res) => {
   try {
     const { actor } = req.query;
     const user = await getSingleUser(req);
+    
+    // If not our DID or Handle, proxy it!
     if (!user || (actor !== user.did && actor !== user.handle)) {
-        return res.status(404).json({ error: 'ProfileNotFound' });
+        console.log(`[GET_PROFILE] Proxying request for external actor: ${actor}`);
+        return proxyRequest(req, res, DEFAULT_APPVIEW);
     }
 
     const storage = new TursoStorage();
@@ -1120,6 +1123,14 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res) => {
   try {
     const actors = Array.isArray(req.query.actors) ? req.query.actors : [req.query.actors];
     const user = await getSingleUser(req);
+    
+    // If we're requesting multiple profiles and any of them aren't us, proxy the whole request
+    const isAllLocal = actors.every(a => a === user?.did || a === user?.handle);
+    if (!isAllLocal) {
+        console.log(`[GET_PROFILES] Proxying request for external actors: ${actors}`);
+        return proxyRequest(req, res, DEFAULT_APPVIEW);
+    }
+
     const profiles = [];
 
     if (user) {
@@ -1231,8 +1242,11 @@ const fetchExternalPost = async (req, uri) => {
 const getAuthorFeed = async (req, res, actor, limit) => {
   try {
     const user = await getSingleUser(req);
+    
+    // Proxy if not the local user
     if (!user || (actor !== user.did && actor !== user.handle)) {
-        return res.json({ feed: [] });
+        console.log(`[GET_AUTHOR_FEED] Proxying feed request for: ${actor}`);
+        return proxyRequest(req, res, DEFAULT_APPVIEW);
     }
 
     const storage = new TursoStorage();
@@ -1363,7 +1377,8 @@ const getPostThread = async (req, res, uri, isV2 = false) => {
     const isLocalDid = canonicalUri.startsWith(`at://${user.did}`);
 
     if (!isLocalDid) {
-        return res.status(404).json({ error: 'PostNotFound' });
+        console.log(`[GET_POST_THREAD] Proxying thread request for external URI: ${uri}`);
+        return proxyRequest(req, res, DEFAULT_APPVIEW);
     }
 
     const parts = canonicalUri.replace('at://', '').split('/');
@@ -2001,6 +2016,56 @@ app.get('/xrpc/com.atproto.sync.getCheckout', async (req, res) => {
 
   res.setHeader('Content-Type', 'application/vnd.ipld.car');
   res.send(Buffer.from(car));
+});
+
+// --- Generic XRPC Proxy ---
+const DEFAULT_APPVIEW = process.env.APPVIEW_URL || 'https://bsky.social';
+
+const proxyRequest = async (req, res, targetUrl) => {
+  try {
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers.connection;
+    delete headers['content-length'];
+
+    console.log(`[PROXY] Forwarding ${req.method} ${req.url} -> ${targetUrl}`);
+
+    const response = await axios({
+      method: req.method,
+      url: `${targetUrl}${req.url}`,
+      data: req.body,
+      headers,
+      params: req.query,
+      responseType: 'arraybuffer', // Ensure we handle binary data like blobs
+      validateStatus: () => true, // Forward all status codes
+    });
+
+    // Forward response headers
+    Object.entries(response.headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+
+    res.status(response.status).send(response.data);
+  } catch (err) {
+    console.error(`[PROXY] Error proxying to ${targetUrl}:`, err.message);
+    res.status(502).json({ error: 'ProxyError', message: err.message });
+  }
+};
+
+// Catch-all for any unimplemented app.bsky.* calls (Read-only)
+app.get(/^\/xrpc\/app\.bsky\..*/, async (req, res) => {
+  await proxyRequest(req, res, DEFAULT_APPVIEW);
+});
+
+// Explicit proxying via atproto-proxy header
+app.all(/^\/xrpc\/.*/, async (req, res, next) => {
+  const proxyTargetDid = req.headers['atproto-proxy'];
+  if (!proxyTargetDid) return next();
+  
+  // For simplicity in this personal PDS, we proxy to bsky.social if any proxying is requested
+  // In a full implementation, we would resolve proxyTargetDid to its service endpoint
+  console.log(`[PROXY] Explicit request to proxy to ${proxyTargetDid}`);
+  await proxyRequest(req, res, DEFAULT_APPVIEW);
 });
 
 export default app;
