@@ -1190,7 +1190,12 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
         return res.status(404).json({ error: 'ProfileNotFound' });
     }
     const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
-    
+
+    // Hybrid Hydration for counts
+    const global = await fetchGlobalProfileData(user.did);
+    const localPosts = await countLocalRecords(repoObj, 'app.bsky.feed.post');
+    const localFollows = await countLocalRecords(repoObj, 'app.bsky.graph.follow');
+
     res.json({
         did: user.did,
         handle: user.handle,
@@ -1198,7 +1203,11 @@ app.get('/xrpc/app.bsky.actor.getProfile', async (req, res, next) => {
         description: profile.description || '',
         avatar: getBlobUrl(req, profile.avatar),
         banner: getBlobUrl(req, profile.banner),
+        followersCount: global.followersCount, // AppView is source of truth for followers
+        followsCount: Math.max(localFollows, global.followsCount),
+        postsCount: Math.max(localPosts, global.postsCount),
         associated: {
+
             activitySubscription: { allowSubscriptions: 'followers' }
         },
         viewer: {
@@ -1235,6 +1244,11 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res, next) => {
         
         if (profile) {
             const repoCreatedAt = await getSystemMeta('repo_created_at') || new Date().toISOString();
+            
+            // Hybrid Hydration
+            const global = await fetchGlobalProfileData(user.did);
+            const localPosts = await countLocalRecords(repoObj, 'app.bsky.feed.post');
+            const localFollows = await countLocalRecords(repoObj, 'app.bsky.graph.follow');
 
             const localProfile = {
                 did: user.did,
@@ -1243,6 +1257,9 @@ app.get('/xrpc/app.bsky.actor.getProfiles', async (req, res, next) => {
                 description: profile.description || '',
                 avatar: getBlobUrl(req, profile.avatar),
                 banner: getBlobUrl(req, profile.banner),
+                followersCount: global.followersCount,
+                followsCount: Math.max(localFollows, global.followsCount),
+                postsCount: Math.max(localPosts, global.postsCount),
                 associated: {
                     activitySubscription: { allowSubscriptions: 'followers' }
                 },
@@ -1335,6 +1352,33 @@ const fetchExternalPost = async (req, uri) => {
 };
 
 // Helper to get likes for a set of posts
+const fetchGlobalProfileData = async (actor) => {
+  try {
+    const PUBLIC_API = 'https://public.api.bsky.app';
+    console.log(`[HYDRATION] Fetching global profile for: ${actor}`);
+    const res = await axios.get(`${PUBLIC_API}/xrpc/app.bsky.actor.getProfile`, {
+      params: { actor },
+      timeout: 3000
+    });
+    return {
+        followersCount: res.data.followersCount || 0,
+        followsCount: res.data.followsCount || 0,
+        postsCount: res.data.postsCount || 0
+    };
+  } catch (err) {
+    console.warn(`[HYDRATION] Failed to fetch global profile for ${actor}:`, err.message);
+    return { followersCount: 0, followsCount: 0, postsCount: 0 };
+  }
+};
+
+const countLocalRecords = async (repoObj, collection) => {
+  let count = 0;
+  for await (const rec of repoObj.walkRecords()) {
+    if (rec.collection === collection) count++;
+  }
+  return count;
+};
+
 const getLikesForPosts = async (repoObj, userDid) => {
   const likes = new Map();
   for await (const rec of repoObj.walkRecords()) {
