@@ -12,6 +12,7 @@ export function cborEncode(obj) {
     typeEncoders: {
       Object: (obj) => {
         if (obj.asCID === obj || obj._Symbol_for_multiformats_cid) {
+          // ATProto CID tag 42: leading 0x00 followed by the raw multihash
           const bytes = new Uint8Array(obj.bytes.length + 1);
           bytes[0] = 0;
           bytes.set(obj.bytes, 1);
@@ -28,17 +29,15 @@ export function cborEncode(obj) {
 }
 
 export function cborDecode(bytes) {
-  return cborg.decode(bytes, {
-    tags: {
-      42: (value) => {
-        if (value instanceof Uint8Array) {
-          const cidBytes = value[0] === 0 ? value.subarray(1) : value;
-          return CID.decode(cidBytes);
-        }
-        return value;
-      }
+  const tags = [];
+  tags[42] = (value) => {
+    if (value instanceof Uint8Array) {
+      const cidBytes = value[0] === 0 ? value.subarray(1) : value;
+      return CID.decode(cidBytes);
     }
-  });
+    return value;
+  };
+  return cborg.decode(bytes, { tags });
 }
 
 export function formatDid(hostname) {
@@ -57,24 +56,7 @@ export async function createBlobCid(content) {
   return CID.createV1(0x55, hash).toString(); // 0x55 is raw codec (typical for blobs)
 }
 
-/**
- * Wraps a raw 33-byte compressed Secp256k1 public key in a DER-encoded
- * SubjectPublicKeyInfo (SPKI) structure so that Node.js crypto functions 
- * can parse it.
- * 
- * ASN.1 Structure:
- * SEQUENCE (2 elem)
- *   SEQUENCE (2 elem)
- *     OBJECT IDENTIFIER 1.2.840.10045.2.1 (id-ecPublicKey)
- *     OBJECT IDENTIFIER 1.3.132.0.10 (secp256k1)
- *   BIT STRING (264 bit) 00000011... (The raw 33-byte key)
- */
 export function wrapCompressedSecp256k1(publicKeyBytes) {
-  // SPKI Header for Secp256k1 (23 bytes)
-  // SEQUENCE (2 elem)
-  //   SEQUENCE (2 elem)
-  //     OBJECT IDENTIFIER 1.2.840.10045.2.1 (id-ecPublicKey)
-  //     OBJECT IDENTIFIER 1.3.132.0.10 (secp256k1)
   const header = Buffer.from([
     0x30, 0x36, 0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x05, 0x2b, 
     0x81, 0x04, 0x00, 0x0a, 0x03, 0x22, 0x00
