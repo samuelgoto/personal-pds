@@ -2027,17 +2027,22 @@ const proxyRequest = async (req, res, targetUrl) => {
     delete headers.host;
     delete headers.connection;
     delete headers['content-length'];
+    
+    // ATProto nuance: If we're proxying to an external AppView, 
+    // we should NOT forward our local PDS Authorization header (JWT).
+    // An external AppView won't be able to verify it.
+    delete headers.authorization;
 
-    console.log(`[PROXY] Forwarding ${req.method} ${req.url} -> ${targetUrl}`);
+    console.log(`[PROXY] Forwarding ${req.method} ${req.path} -> ${targetUrl}`);
 
     const response = await axios({
       method: req.method,
-      url: `${targetUrl}${req.url}`,
-      data: req.body,
+      url: `${targetUrl}${req.path}`, // Use req.path (no query string) instead of req.url
+      data: (req.method === 'GET' || req.method === 'HEAD') ? undefined : req.body,
       headers,
-      params: req.query,
-      responseType: 'arraybuffer', // Ensure we handle binary data like blobs
-      validateStatus: () => true, // Forward all status codes
+      params: req.query, // Axios will handle query parameter serialization correctly
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
     });
 
     // Forward response headers
