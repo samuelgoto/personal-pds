@@ -14,7 +14,9 @@ export function fixCids(obj) {
   if (obj.asCID === obj || obj._Symbol_for_multiformats_cid || (obj.code !== undefined && obj.version !== undefined && obj.hash !== undefined)) {
     try {
       if (obj.asCID === obj) return obj;
-      // Handle the case where it's a plain object with the same fields
+      // Re-decode from its own bytes to ensure it's a clean instance
+      if (obj.bytes) return CID.decode(obj.bytes);
+      // Reconstruct if bytes are missing
       return CID.create(obj.version, obj.code, obj.hash);
     } catch (e) {
       return obj;

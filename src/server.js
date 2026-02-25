@@ -886,6 +886,11 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
 
     // Ensure we have a proper CID object for the ops
     const opCid = typeof recordCid === 'string' ? CID.parse(recordCid) : recordCid;
+    console.log(`DEBUG: opCid for firehose:`, {
+        type: typeof opCid,
+        isCid: !!(opCid?.asCID === opCid || opCid?._Symbol_for_multiformats_cid),
+        val: opCid?.toString()
+    });
 
     await sequencer.sequenceEvent({
       type: 'commit',
