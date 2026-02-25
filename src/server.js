@@ -578,9 +578,35 @@ app.post('/debug/reset', async (req, res) => {
   }
 });
 
+const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
+
+export async function pingRelay(hostname) {
+  if (!hostname || hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
+    const msg = 'Skipping relay ping: PDS is running on localhost or hostname not provided.';
+    console.log(msg);
+    return { success: false, message: msg };
+  }
+
+  try {
+    console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
+    const res = await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
+      hostname: hostname
+    });
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES ('last_relay_ping', ?)",
+      args: [new Date().toISOString()]
+    });
+    console.log('Relay notified successfully.');
+    return { success: true, data: res.data };
+  } catch (err) {
+    const errorMsg = err.response?.data || err.message;
+    console.error('Failed to notify relay:', errorMsg);
+    return { success: false, error: errorMsg };
+  }
+}
+
 app.get('/debug/ping-relay', async (req, res) => {
   try {
-    const { pingRelay } = await import('../api/index.js');
     const host = getHost(req);
     const result = await pingRelay(host);
     res.json({
