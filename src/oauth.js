@@ -4,7 +4,7 @@ import { createAccessToken, createIdToken, validateDpop, verifyToken } from './a
 import { createHash, randomBytes, createECDH } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
-import { getHost, getDidDoc } from './server.js';
+import { getDidDoc } from './server.js';
 
 const router = express.Router();
 

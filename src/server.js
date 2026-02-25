@@ -52,7 +52,7 @@ app.use(async (req, res, next) => {
     throw new Error('Repository not initialized. Check server startup logs.');
   }
 
-  const host = getHost(req);
+  const host = (handle && handle !== 'localhost') ? handle : (req.get('host') || 'localhost');
   const isProd = process.env.NODE_ENV === 'production' || !host.includes('localhost');
   const protocol = (req.protocol === 'https' || isProd) ? 'https' : 'http';
   
@@ -96,16 +96,11 @@ app.get('/favicon.ico', (req, res) => {
 // Helper to get system state
 
 // Helper to get the current host safely
-export const getHost = (req) => {
-  if (req.user?.handle && req.user.handle !== 'localhost') return req.user.handle;
-  return req.get('host') || 'localhost';
-};
 
 const getBlobUrl = (req, blob) => {
   if (!blob || !blob.ref || !blob.ref.$link) return undefined;
-  const host = getHost(req);
-  const protocol = (req.protocol === 'https' || process.env.NODE_ENV === 'production' || !host.includes('localhost')) ? 'https' : 'http';
-  return `${protocol}://${host}/xrpc/com.atproto.sync.getBlob?cid=${blob.ref.$link}`;
+  const user = req.user;
+  return `${user.protocol}://${user.host}/xrpc/com.atproto.sync.getBlob?cid=${blob.ref.$link}`;
 };
 
 // Helper to get the single allowed user from Env
@@ -202,10 +197,8 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
   const { did } = req.query;
   if (!did) return res.status(400).json({ error: 'InvalidRequest', message: 'Missing did' });
 
-  const pdsDid = (process.env.PDS_DID || '').trim();
-  if (did.toLowerCase() === pdsDid.toLowerCase()) {
-    const host = getHost(req);
-    const doc = await getDidDoc(req, host);
+  if (did.toLowerCase() === req.user.did.toLowerCase()) {
+    const doc = await getDidDoc(req, req.user.host);
     if (!doc) return res.status(404).json({ error: 'DidNotFound' });
     return res.json(doc);
   }
@@ -223,13 +216,11 @@ app.get('/xrpc/com.atproto.identity.resolveDid', async (req, res) => {
 app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   const { handle } = req.query;
-  const user = req.user;
-  if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
 
   // Only resolve locally if the handle EXACTLY matches our domain or is empty/self
-  if (!handle || handle === user.handle || handle === 'self') {
-    console.log(`[RESOLVE] Local handle resolved: ${handle || 'default'} -> ${user.did}`);
-    return res.json({ did: user.did.trim() });
+  if (!handle || handle === req.user.handle || handle === 'self') {
+    console.log(`[RESOLVE] Local handle resolved: ${handle || 'default'} -> ${req.user.did}`);
+    return res.json({ did: req.user.did.trim() });
   }
 
   // 2. Otherwise, proxy the request to a public AppView to resolve other handles
