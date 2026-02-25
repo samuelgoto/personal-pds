@@ -38,17 +38,17 @@ app.use(express.urlencoded({ extended: true }));
 
 // --- PDS User Context Middleware ---
 app.use(async (req, res, next) => {
-  const handle = process.env.HANDLE || 'localhost.test';
+  const handle = process.env.HANDLE;
   const did = process.env.PDS_DID?.trim();
   const privKeyHex = process.env.PRIVATE_KEY;
   const password = process.env.PASSWORD;
   
-  if (!did) {
-    throw new Error('PDS_DID environment variable is not set');
+  if (!handle) {
+    throw new Error('HANDLE environment variable is not set');
   }
   
-  if (!password) {
-    throw new Error('PASSWORD environment variable is not set');
+  if (!did) {
+    throw new Error('PDS_DID environment variable is not set');
   }
   
   const root_cid = await getRootCid();

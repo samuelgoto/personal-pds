@@ -127,13 +127,16 @@ export async function maybeInitRepo() {
   if (rootCid) return;
 
   const privKeyHex = process.env.PRIVATE_KEY;
-  const domain = (process.env.HANDLE || 'localhost:3000').split(':')[0];
-  const did = (process.env.PDS_DID || process.env.PDS_DID).trim();
-  
+  const domain = process.env.HANDLE?.split(':')[0];
+  const did = process.env.PDS_DID?.trim();
+
+  if (!domain) throw new Error('HANDLE environment variable is not set');
+  if (!did) throw new Error('PDS_DID environment variable is not set');
   if (!privKeyHex) {
     console.log('PRIVATE_KEY not found. Skipping repo auto-init.');
     return;
   }
+
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
 
   console.log(`Auto-initializing PDS repo for ${did}...`);
