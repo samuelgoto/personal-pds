@@ -51,7 +51,7 @@ export async function createIdToken(did, handle, client_id, issuer) {
   return `${headerB64}.${payloadB64}.${sigB64}`;
 }
 
-export async function createServiceAuthToken(aud, lxm, exp = null) {
+export async function createServiceAuthToken(aud, lxm, sub, exp = null) {
   const privKeyHex = process.env.PRIVATE_KEY;
   const pdsDid = (process.env.PDS_DID || '').trim();
   if (!privKeyHex) throw new Error('No PDS private key');
@@ -59,11 +59,12 @@ export async function createServiceAuthToken(aud, lxm, exp = null) {
 
   const payload = {
     iss: pdsDid,
-    aud: aud,
-    lxm: lxm,
+    sub,
+    aud: aud.split('#')[0],
+    lxm,
     iat: Math.floor(Date.now() / 1000),
-    exp: exp || (Math.floor(Date.now() / 1000) + 60), // Default 60 seconds
-    jti: createHash('sha256').update(Math.random().toString()).digest('hex'),
+    exp: exp || (Math.floor(Date.now() / 1000) + 60),
+    jti: randomBytes(16).toString('hex'),
   };
 
   const header = { typ: 'JWT', alg: 'ES256K' };

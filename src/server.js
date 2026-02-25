@@ -1486,6 +1486,9 @@ app.all(/^\/xrpc\/.*/, async (req, res, next) => {
 
   console.log(`[PROXY] Proxying ${method} to ${proxyTargetDid} (${targetUrl})`);
 
+  // Identify user for Service Auth 'sub' claim
+  const userDid = verifyToken(req.headers.authorization?.split(' ')[1])?.sub;
+
   const forwardHeaders = {};
   const whitelist = [
       'accept', 'accept-encoding', 'accept-language', 'user-agent',
@@ -1498,7 +1501,7 @@ app.all(/^\/xrpc\/.*/, async (req, res, next) => {
   }
 
   // Add Service Authentication
-  const serviceToken = await createServiceAuthToken(proxyTargetDid, method);
+  const serviceToken = await createServiceAuthToken(proxyTargetDid, method, userDid);
   forwardHeaders['authorization'] = `Bearer ${serviceToken}`;
 
   const response = await axios({
