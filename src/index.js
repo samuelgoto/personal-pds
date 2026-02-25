@@ -2,9 +2,36 @@ import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
 import { initDb, db } from './db.js';
-import app, { wss, pingRelay } from './server.js';
+import app, { wss } from './server.js';
 
 const PORT = process.env.PORT || 3000;
+
+const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
+
+async function pingRelay(hostname) {
+  if (!hostname || hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
+    const msg = 'Skipping relay ping: PDS is running on localhost or hostname not provided.';
+    console.log(msg);
+    return { success: false, message: msg };
+  }
+
+  try {
+    console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
+    const res = await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
+      hostname: hostname
+    });
+    await db.execute({
+      sql: "INSERT OR REPLACE INTO system_state (key, value) VALUES ('last_relay_ping', ?)",
+      args: [new Date().toISOString()]
+    });
+    console.log('Relay notified successfully.');
+    return { success: true, data: res.data };
+  } catch (err) {
+    const errorMsg = err.response?.data || err.message;
+    console.error('Failed to notify relay:', errorMsg);
+    return { success: false, error: errorMsg };
+  }
+}
 
 // Initialization promise to ensure it only runs once
 let initialized = false;
