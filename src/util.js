@@ -3,25 +3,25 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { TID } from '@atproto/common';
 import { CID } from 'multiformats/cid';
-import * as cborg from 'cborg';
-import { Token, Type } from 'cborg';
+import * as dagCbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
 
 export function fixCids(obj) {
   if (!obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(fixCids);
   
-  // If it's already a CID-like object, convert it
+  // If it's already a CID-like object, convert it to a real CID instance
   if (obj.asCID === obj || obj._Symbol_for_multiformats_cid || (obj.code !== undefined && obj.version !== undefined && obj.hash !== undefined)) {
     try {
-      return CID.asCID(obj) || CID.create(obj.version, obj.code, obj.hash);
+      if (obj.asCID === obj) return obj;
+      // Handle the case where it's a plain object with the same fields
+      return CID.create(obj.version, obj.code, obj.hash);
     } catch (e) {
       return obj;
     }
   }
 
   // If it's a string that looks like a CID, try to parse it
-  // (Standard ATProto CIDs start with 'bafy')
   if (typeof obj === 'string' && obj.startsWith('bafy')) {
     try {
       return CID.parse(obj);
@@ -46,57 +46,11 @@ export function fixCids(obj) {
 }
 
 export function cborEncode(obj) {
-  return cborg.encode(obj, {
-    typeEncoders: {
-      Object: (obj) => {
-        // Robustly identify CIDs (both multiformats instances and plain objects)
-        const isCid = obj.asCID === obj || 
-                      obj._Symbol_for_multiformats_cid ||
-                      (obj.code !== undefined && obj.version !== undefined && obj.hash !== undefined);
-
-        if (isCid) {
-          // Get the raw bytes
-          let bytes = obj.bytes;
-          if (!bytes) {
-            // If it's a plain object from a DB/JSON cycle, it might not have .bytes
-            // But it will have .code, .version, .hash
-            try {
-                // Try to reconstruct it to get the bytes
-                const cid = CID.create(obj.version, obj.code, obj.hash);
-                bytes = cid.bytes;
-            } catch (e) {
-                return undefined;
-            }
-          }
-
-          if (!bytes) return undefined;
-
-          // ATProto CID tag 42: leading 0x00 followed by the raw multihash
-          const taggedBytes = new Uint8Array(bytes.length + 1);
-          taggedBytes[0] = 0;
-          taggedBytes.set(bytes, 1);
-          // Manually return tokens for Tag 42
-          return [
-            new Token(Type.tag, 42),
-            new Token(Type.bytes, taggedBytes)
-          ];
-        }
-        return undefined;
-      }
-    }
-  });
+  return dagCbor.encode(obj);
 }
 
 export function cborDecode(bytes) {
-  const tags = [];
-  tags[42] = (value) => {
-    if (value instanceof Uint8Array) {
-      const cidBytes = value[0] === 0 ? value.subarray(1) : value;
-      return CID.decode(cidBytes);
-    }
-    return value;
-  };
-  return cborg.decode(bytes, { tags });
+  return dagCbor.decode(bytes);
 }
 
 export function formatDid(hostname) {
