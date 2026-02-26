@@ -53,8 +53,8 @@ app.use(async (req, res, next) => {
     throw new Error('Repository not initialized. Check server startup logs.');
   }
 
-  const host = process.env.DOMAIN || (req.get('host') || 'localhost');
-  const isProd = process.env.NODE_ENV === 'production' || !host.includes('localhost');
+  const host = req.get('host') || process.env.DOMAIN || 'localhost';
+  const isProd = process.env.NODE_ENV === 'production' || (!host.includes('localhost') && !host.includes('127.0.0.1'));
   const protocol = (req.protocol === 'https' || isProd) ? 'https' : 'http';
   
   req.user = {
@@ -141,7 +141,7 @@ app.get('/.well-known/atproto-did', async (req, res) => {
 app.get('/xrpc/com.atproto.identity.getRecommendedDidCredentials', async (req, res) => {
   res.json({
     rotationKeys: [],
-    alsoKnownAs: [],
+    alsoKnownAs: [`at://${req.user.handle}`],
     verificationMethods: {},
     services: {}
   });

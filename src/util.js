@@ -19,7 +19,7 @@ export const getDidDoc = async (user, host) => {
         "https://w3id.org/security/suites/secp256k1-2019/v1"
     ],
     "id": user.did,
-    "alsoKnownAs": [`at://${host}`],
+    "alsoKnownAs": [`at://${user.handle}`],
     verificationMethod: [
       {
         "id": `${user.did}#atproto`,
