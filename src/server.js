@@ -77,7 +77,6 @@ app.use(admin);
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
   const pdsDid = req.user.did;
-  console.log(`[${new Date().toISOString()}] describeServer request from ${req.headers['user-agent'] || 'unknown'}. Returning did=${pdsDid}`);
   res.json({ availableUserDomains: [], did: pdsDid });
 });
 
