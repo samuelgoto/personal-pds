@@ -1,6 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
+import { sequencer } from './sequencer.js';
 
 const router = express.Router();
 
@@ -8,6 +9,7 @@ router.get('/', async (req, res) => {
   const user = req.user;
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
+  const subscriberCount = sequencer.getSubscriberCount();
 
   // Get last 10 events
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
@@ -68,6 +70,7 @@ router.get('/', async (req, res) => {
         <div class="card">
             <h2>Network & Status</h2>
             <div class="stat"><span class="label">PDS Status</span><span class="value status-ok">Online</span></div>
+            <div class="stat"><span class="label">Relay Connections</span><span class="value ${subscriberCount > 0 ? 'status-ok' : 'status-warn'}">${subscriberCount}</span></div>
             <div class="actions">
                 <button class="secondary" onclick="runAction('/xrpc/com.atproto.server.describeServer')">Self-Check</button>
             </div>

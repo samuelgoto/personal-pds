@@ -5,6 +5,10 @@ import * as cbor from '@ipld/dag-cbor';
 class Sequencer {
   clients = new Set();
 
+  getSubscriberCount() {
+    return this.clients.size;
+  }
+
   async addClient(ws, cursor) {
     this.clients.add(ws);
     ws.on('close', () => this.clients.delete(ws));
