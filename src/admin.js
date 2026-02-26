@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from './db.js';
+import { db, destroy } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
 import { sequencer } from './sequencer.js';
 import { setUpRepo } from './repo.js';
