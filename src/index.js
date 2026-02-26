@@ -11,25 +11,11 @@ const PORT = process.env.PORT || 3000;
 const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
 
 async function pingRelay(hostname) {
-  if (!hostname || hostname.includes('localhost') || hostname.includes('127.0.0.1')) {
-    const msg = 'Skipping relay ping: PDS is running on localhost or hostname not provided.';
-    console.log(msg);
-    return { success: false, message: msg };
-  }
-
-  try {
-    console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
-    const res = await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, {
-      hostname: hostname
-    });
-    setLastRelayPing(new Date().toISOString());
-    console.log('Relay notified successfully.');
-    return { success: true, data: res.data };
-  } catch (err) {
-    const errorMsg = err.response?.data || err.message;
-    console.error('Failed to notify relay:', errorMsg);
-    return { success: false, error: errorMsg };
-  }
+  console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
+  await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, { hostname });
+  setLastRelayPing(new Date().toISOString());
+  console.log('Relay notified successfully.');
+  return { success: true };
 }
 
 // Validation & Initialization
@@ -60,11 +46,9 @@ server.on('upgrade', (request, socket, head) => {
 
 server.listen(PORT, () => {
   console.log(`Minimal PDS listening on port ${PORT}`);
-  const domain = process.env.HANDLE;
   
   // Proactively ping relay on startup
-  setTimeout(async () => {
-      console.log(`Attempting to ping relay for ${domain}...`);
-      await pingRelay(domain);
-  }, 20000); 
+  pingRelay(process.env.HANDLE).catch(err => {
+    console.warn('Initial relay ping failed:', err.message);
+  });
 });
