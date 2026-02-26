@@ -4,9 +4,9 @@ import http from 'http';
 import nock from 'nock';
 import axios from 'axios';
 import app, { wss } from '../src/server.js';
-import { initDb, createDb, setDb } from '../src/db.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
+import { db, connect } from '../src/db.js';
 import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import { readCarWithRoot } from '@atproto/repo';
@@ -35,10 +35,8 @@ describe('Relay Interaction & Protocol Compliance', () => {
     process.env.HANDLE = 'localhost.test';
     const dbName = `relay-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
-    testDb = createDb(`file:${dbPath}`);
-    setDb(testDb);
 
-    await initDb(testDb); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await maybeInitRepo();
     userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);
@@ -56,7 +54,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
     }
     wss.close();
     sequencer.close();
-    testDb.close();
+    db.close();
     await new Promise((resolve) => server.close(resolve));
     nock.cleanAll();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
@@ -188,7 +186,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
     expect(likeRes.status).toBe(200);
 
     // 2.5 Verify blocks exist in database
-    const dbBlocks = await testDb.execute('SELECT count(*) as count FROM repo_blocks');
+    const dbBlocks = await db.execute('SELECT count(*) as count FROM repo_blocks');
     expect(dbBlocks.rows[0].count).toBeGreaterThan(1); // Should have more than just the initial repo blocks
 
     // 3. Wait for firehose events

@@ -2,16 +2,13 @@ import { createClient } from '@libsql/client';
 
 export let db;
 
-export function setDb(client) {
-  db = client;
-}
+export async function connect(url = process.env.TURSO_DATABASE_URL) {
+  if (!db) {
+    const authToken = process.env.TURSO_AUTH_TOKEN;
+    db = createClient({ url, authToken });
+  }
 
-export const createDb = (url, authToken) => {
-  return createClient({ url, authToken });
-};
-
-export async function initDb(client) {
-  await client.batch([
+  await db.batch([
     `CREATE TABLE IF NOT EXISTS repo_blocks (
       cid TEXT PRIMARY KEY,
       block BLOB NOT NULL
@@ -65,10 +62,5 @@ export async function initDb(client) {
     )`
   ], "write");
 }
-
-const defaultUrl = process.env.TURSO_DATABASE_URL;
-const authToken = process.env.TURSO_AUTH_TOKEN;
-
-db = createDb(defaultUrl || 'file:local.db', authToken);
 
 

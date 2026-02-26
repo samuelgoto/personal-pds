@@ -4,9 +4,9 @@ import http from 'http';
 import axios from 'axios';
 import { BskyAgent } from '@atproto/api';
 import app, { wss } from '../src/server.js';
-import { initDb, createDb, setDb } from '../src/db.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
+import { db, connect } from '../src/db.js';
 import { maybeInitRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import fs from 'fs';
@@ -34,10 +34,8 @@ describe('PDS Local Tests', () => {
     process.env.HANDLE = 'localhost.test';
     const dbName = `test-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
-    testDb = createDb(`file:${dbPath}`);
-    setDb(testDb);
 
-    await initDb(testDb); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await maybeInitRepo();
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {
@@ -54,7 +52,7 @@ describe('PDS Local Tests', () => {
     }
     wss.close();
     sequencer.close();
-    testDb.close();
+    db.close();
     await new Promise((resolve) => server.close(resolve));
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;

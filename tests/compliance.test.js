@@ -4,7 +4,7 @@ import http from 'http';
 import axios from 'axios';
 import nock from 'nock';
 import app, { wss } from '../src/server.js';
-import { initDb, createDb, setDb } from '../src/db.js';
+import { db, connect } from '../src/db.js';
 import { maybeInitRepo } from '../src/repo.js';
 import { sequencer } from '../src/sequencer.js';
 import fs from 'fs';
@@ -31,10 +31,8 @@ describe('ATProto XRPC Lexicon Compliance', () => {
     process.env.HANDLE = 'localhost.test';
     const dbName = `compliance-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
-    testDb = createDb(`file:${dbPath}`);
-    setDb(testDb);
 
-    await initDb(testDb); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await maybeInitRepo();
     userDid = process.env.PDS_DID;
 
     server = http.createServer(app);
@@ -43,7 +41,7 @@ describe('ATProto XRPC Lexicon Compliance', () => {
 
   afterAll(async () => {
     sequencer.close();
-    testDb.close();
+    db.close();
     await new Promise((resolve) => server.close(resolve));
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;

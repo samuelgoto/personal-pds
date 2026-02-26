@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 import http from 'http';
 import axios from 'axios';
 import app, { wss } from '../src/server.js';
-import { initDb, createDb, setDb } from '../src/db.js';
+import { db, connect } from '../src/db.js';
 import { maybeInitRepo } from '../src/repo.js';
 import { sequencer } from '../src/sequencer.js';
 import * as cryptoAtp from '@atproto/crypto';
@@ -76,10 +76,8 @@ describe('ATProto OAuth Implementation Tests', () => {
     const dbName = `oauth-${Date.now()}.db`;
 
     dbPath = path.join(__dirname, dbName);
-    testDb = createDb(`file:${dbPath}`);
-    setDb(testDb);
 
-    await initDb(testDb); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await maybeInitRepo();
     userDid = process.env.PDS_DID;
 
     server = http.createServer(app);
@@ -92,7 +90,7 @@ describe('ATProto OAuth Implementation Tests', () => {
     }
     wss.close();
     sequencer.close();
-    testDb.close();
+    db.close();
     await new Promise((resolve) => server.close(resolve));
     nock.cleanAll();
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);

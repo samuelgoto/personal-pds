@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
-import { initDb, db } from './db.js';
+import { connect, db } from './db.js';
 import app, { wss } from './server.js';
 import { setLastRelayPing } from './admin.js';
 import { maybeInitRepo } from './repo.js';
@@ -45,7 +45,7 @@ async function initialize() {
   }
 
   console.log('Initializing PDS...');
-  await initDb(db);
+  await connect();
   await maybeInitRepo();
   initialized = true;
   console.log('Initialization complete.');

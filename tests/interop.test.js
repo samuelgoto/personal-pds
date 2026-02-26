@@ -3,9 +3,9 @@ import { jest } from '@jest/globals';
 import http from 'http';
 import axios from 'axios';
 import app, { wss } from '../src/server.js';
-import { initDb, createDb, setDb } from '../src/db.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
+import { db, connect } from '../src/db.js';
 import { maybeInitRepo } from '../src/repo.js';
 import { readCarWithRoot } from '@atproto/repo';
 import fs from 'fs';
@@ -31,10 +31,8 @@ describe('PDS Interoperability Tests', () => {
     process.env.HANDLE = 'localhost.test';
     const dbName = `interop-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
-    testDb = createDb(`file:${dbPath}`);
-    setDb(testDb);
 
-    await initDb(testDb); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await maybeInitRepo();
     userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);
@@ -52,7 +50,7 @@ describe('PDS Interoperability Tests', () => {
     }
     wss.close();
     sequencer.close();
-    testDb.close();
+    db.close();
     await new Promise((resolve) => server.close(resolve));
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const shmPath = `${dbPath}-shm`;
