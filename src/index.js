@@ -32,61 +32,39 @@ async function pingRelay(hostname) {
   }
 }
 
-// Initialization promise to ensure it only runs once
-let initialized = false;
-async function initialize() {
-  if (initialized) return;
-  console.log('Checking environment variables...');
-  
-  const required = ['HANDLE', 'PDS_DID', 'PRIVATE_KEY', 'PASSWORD', 'TURSO_DATABASE_URL'];
-  const missing = required.filter(k => !process.env[k]);
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+// Validation & Initialization
+if (!process.env.HANDLE) throw new Error('Missing HANDLE environment variable');
+if (!process.env.PDS_DID) throw new Error('Missing PDS_DID environment variable');
+if (!process.env.PRIVATE_KEY) throw new Error('Missing PRIVATE_KEY environment variable');
+if (!process.env.PASSWORD) throw new Error('Missing PASSWORD environment variable');
+if (!process.env.TURSO_DATABASE_URL) throw new Error('Missing TURSO_DATABASE_URL environment variable');
+
+console.log('Initializing PDS...');
+await connect();
+await maybeInitRepo();
+console.log('Initialization complete.');
+
+const server = http.createServer(app);
+
+// Handle WebSocket upgrades for the firehose
+server.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  if (url.pathname.startsWith('/xrpc/com.atproto.sync.subscribeRepos')) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  } else {
+    socket.destroy();
   }
-
-  console.log('Initializing PDS...');
-  await connect();
-  await maybeInitRepo();
-  initialized = true;
-  console.log('Initialization complete.');
-}
-
-// Global error handlers
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-  process.exit(1);
 });
 
-// Start the server
-initialize().then(() => {
-  const serverInst = http.createServer(app);
-
-  // Handle WebSocket upgrades for the firehose
-  serverInst.on('upgrade', (request, socket, head) => {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    if (url.pathname.startsWith('/xrpc/com.atproto.sync.subscribeRepos')) {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request);
-      });
-    } else {
-      socket.destroy();
-    }
-  });
-
-  serverInst.listen(PORT, () => {
-    console.log(`Minimal PDS listening on port ${PORT}`);
-    const domain = process.env.HANDLE || 'pds.sgo.to';
-    
-    // Proactively ping relay on startup
-    setTimeout(async () => {
-        console.log(`Attempting to ping relay for ${domain}...`);
-        await pingRelay(domain);
-    }, 20000); 
-  });
-}).catch(err => {
-  console.error('CRITICAL STARTUP ERROR:', err);
-  process.exit(1);
+server.listen(PORT, () => {
+  console.log(`Minimal PDS listening on port ${PORT}`);
+  const domain = process.env.HANDLE;
+  
+  // Proactively ping relay on startup
+  setTimeout(async () => {
+      console.log(`Attempting to ping relay for ${domain}...`);
+      await pingRelay(domain);
+  }, 20000); 
 });
