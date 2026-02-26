@@ -2,19 +2,12 @@ import express from 'express';
 import { db } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
 
-export let lastRelayPing = null;
-
-export function setLastRelayPing(time) {
-  lastRelayPing = time;
-}
-
 const router = express.Router();
 
 router.get('/', async (req, res) => {
   const user = req.user;
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
-  const lastPing = lastRelayPing;
 
   // Get last 10 events
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
@@ -74,13 +67,7 @@ router.get('/', async (req, res) => {
 
         <div class="card">
             <h2>Network & Status</h2>
-            <div class="stat">
-                <span class="label">Relay Crawler</span>
-                <span class="value ${lastPing ? 'status-ok' : 'status-warn'}">
-                    ${lastPing ? 'Connected' : 'Pending'}
-                </span>
-            </div>
-            <div class="stat"><span class="label">Last Relay Ping</span><span class="value">${lastPing ? new Date(lastPing).toLocaleString() : 'Never'}</span></div>
+            <div class="stat"><span class="label">PDS Status</span><span class="value status-ok">Online</span></div>
             <div class="actions">
                 <button class="secondary" onclick="runAction('/xrpc/com.atproto.server.describeServer')">Self-Check</button>
             </div>

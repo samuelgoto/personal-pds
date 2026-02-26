@@ -3,7 +3,6 @@ import http from 'http';
 import axios from 'axios';
 import { connect, db } from './db.js';
 import app, { wss } from './server.js';
-import { setLastRelayPing } from './admin.js';
 import { maybeInitRepo } from './repo.js';
 
 const PORT = process.env.PORT || 3000;
@@ -13,7 +12,6 @@ const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
 async function pingRelay(hostname) {
   console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
   await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, { hostname });
-  setLastRelayPing(new Date().toISOString());
   console.log('Relay notified successfully.');
   return { success: true };
 }
