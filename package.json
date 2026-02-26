@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "gen-key": "node scripts/gen-key.js",
+    "setup-profile": "node scripts/setup-profile.js",
     "test": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest"
   },
   "keywords": [],

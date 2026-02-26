@@ -53,7 +53,7 @@ app.use(async (req, res, next) => {
     throw new Error('Repository not initialized. Check server startup logs.');
   }
 
-  const host = (handle && handle !== 'localhost') ? handle : (req.get('host') || 'localhost');
+  const host = process.env.DOMAIN || (req.get('host') || 'localhost');
   const isProd = process.env.NODE_ENV === 'production' || !host.includes('localhost');
   const protocol = (req.protocol === 'https' || isProd) ? 'https' : 'http';
   

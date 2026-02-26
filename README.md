@@ -87,6 +87,12 @@ Initialization happens automatically on the first run of the server.
 npm start
 ```
 
+### 4. Setup Profile (Optional)
+To set up your initial Bluesky profile and birthdate:
+```bash
+npm run setup-profile "Your Name" "Your Bio" YYYY-MM-DD
+```
+
 ### 3. Testing
 ```bash
 npm test
