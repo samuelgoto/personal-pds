@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import http from 'http';
 import axios from 'axios';
-import { connect, db } from './db.js';
+import { db, create } from './db.js';
 import app, { wss } from './server.js';
 import { setUpRepo } from './repo.js';
 
