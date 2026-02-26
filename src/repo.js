@@ -128,10 +128,8 @@ export async function maybeInitRepo() {
   if (rootCid) return;
 
   const privKeyHex = process.env.PRIVATE_KEY;
-  const domain = process.env.HANDLE?.split(':')[0];
   const did = process.env.PDS_DID?.trim();
 
-  if (!domain) throw new Error('HANDLE environment variable is not set');
   if (!did) throw new Error('PDS_DID environment variable is not set');
   if (!privKeyHex) {
     console.log('PRIVATE_KEY not found. Skipping repo auto-init.');
@@ -140,58 +138,13 @@ export async function maybeInitRepo() {
 
   const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
 
-  console.log(`Auto-initializing PDS repo for ${did}...`);
+  console.log(`Auto-initializing empty PDS repo for ${did}...`);
   const storage = new TursoStorage();
   
-  // 1. Initial empty repo
-  let repo = await loadRepo(storage, did, keypair, null);
-  
-  // 2. Handle Avatar if provided
-  let avatarBlob = undefined;
-  if (process.env.AVATAR_URL) {
-    try {
-        console.log(`Fetching avatar from ${process.env.AVATAR_URL}...`);
-        const response = await axios.get(process.env.AVATAR_URL, { responseType: 'arraybuffer' });
-        const content = Buffer.from(response.data);
-        const mimeType = response.headers['content-type'] || 'image/png';
-        const cid = await createBlobCid(content);
-
-        await db.execute({
-            sql: "INSERT OR REPLACE INTO blobs (cid, did, mime_type, content, created_at) VALUES (?, ?, ?, ?, ?)",
-            args: [cid, did, mimeType, content, new Date().toISOString()]
-        });
-
-        avatarBlob = {
-            $type: 'blob',
-            ref: { $link: cid },
-            mimeType: mimeType,
-            size: content.length,
-        };
-        console.log(`Avatar stored as blob: ${cid}`);
-    } catch (err) {
-        console.error('Failed to fetch avatar during auto-init:', err.message);
-    }
-  }
-
-  // 3. Create default profile
-  console.log(`Creating default profile...`);
-  repo = await repo.applyWrites([
-    {
-      action: WriteOpAction.Create,
-      collection: 'app.bsky.actor.profile',
-      rkey: 'self',
-      record: fixCids({
-        $type: 'app.bsky.actor.profile',
-        displayName: process.env.DISPLAY_NAME || domain,
-        description: process.env.DESCRIPTION || 'Personal PDS',
-        avatar: avatarBlob,
-        createdAt: new Date().toISOString(),
-      }),
-    }
-  ], keypair);
-
-  const recordCid = await repo.data.get('app.bsky.actor.profile/self');
-  const blocks = await blocksToCarFile(repo.cid, storage.newBlocks);
+  // Create an initial empty repo
+  const repo = await loadRepo(storage, did, keypair, null);
+  const carBlocks = await storage.getRepoBlocks();
+  const blocks = await blocksToCarFile(repo.cid, carBlocks);
 
   await sequencer.sequenceEvent({
     type: 'commit',
@@ -199,16 +152,16 @@ export async function maybeInitRepo() {
     event: {
       repo: did,
       commit: repo.cid,
-      blocks: blocks,
+      blocks,
       rev: repo.commit.rev,
       since: null,
-      ops: [{ action: 'create', path: 'app.bsky.actor.profile/self', cid: recordCid }],
-      blobs: avatarBlob ? [CID.parse(avatarBlob.ref.$link.toString())] : [],
+      ops: [], // Empty genesis
+      blobs: [],
       time: new Date().toISOString(),
       rebase: false,
       tooBig: false,
     }
   });
 
-  console.log(`Repo auto-initialized successfully. Root CID: ${repo.cid.toString()}`);
+  console.log(`Empty Repo initialized successfully. Root CID: ${repo.cid.toString()}`);
 }

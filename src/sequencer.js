@@ -55,8 +55,8 @@ class Sequencer {
     
     const seq = res.rows[0].seq;
     
-    // 2. Encode the FULL event including the seq using DAG-CBOR (canonical)
-    const eventWithSeq = { ...evt.event, seq };
+    // 2. Encode the FULL event including the seq and type using DAG-CBOR (canonical)
+    const eventWithSeq = { ...evt.event, seq, type: evt.type };
     
     // Debug: ensure CIDs are objects
     if (eventWithSeq.commit && typeof eventWithSeq.commit === 'string') {

@@ -63,4 +63,11 @@ export async function connect(url = process.env.TURSO_DATABASE_URL) {
   ], "write");
 }
 
+export async function disconnect() {
+  if (db) {
+    await db.close();
+    db = null;
+  }
+}
+
 
