@@ -24,7 +24,7 @@ if (!process.env.PASSWORD) throw new Error('Missing PASSWORD environment variabl
 if (!process.env.TURSO_DATABASE_URL) throw new Error('Missing TURSO_DATABASE_URL environment variable');
 
 console.log('Initializing PDS...');
-await connect();
+await create();
 await setUpRepo();
 console.log('Initialization complete.');
 

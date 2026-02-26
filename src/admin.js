@@ -143,14 +143,7 @@ router.post('/debug/reset', async (req, res) => {
     }
 
     console.log('Wiping ALL PDS data via Web UI...');
-    await db.execute('DELETE FROM repo_blocks');
-    await db.execute('DELETE FROM sequencer');
-    await db.execute('DELETE FROM blobs');
-    await db.execute('DELETE FROM sessions');
-    await db.execute('DELETE FROM preferences');
-    await db.execute('DELETE FROM oauth_codes');
-    await db.execute('DELETE FROM oauth_refresh_tokens');
-    await db.execute('DELETE FROM oauth_par_requests');
+    await destroy();
     
     // Re-initialize an empty repo so the PDS remains in a valid state
     await setUpRepo();

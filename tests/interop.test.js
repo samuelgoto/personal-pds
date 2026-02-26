@@ -5,7 +5,7 @@ import axios from 'axios';
 import app, { wss } from '../src/server.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
-import { db, connect } from '../src/db.js';
+import { db, setUpForTesting, create } from '../src/db.js';
 import { setUpRepo } from '../src/repo.js';
 import { readCarWithRoot } from '@atproto/repo';
 import fs from 'fs';
@@ -32,7 +32,7 @@ describe('PDS Interoperability Tests', () => {
     const dbName = `interop-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
 
-    await connect(`file:${dbPath}`); await setUpRepo();
+    await setUpForTesting(`file:${dbPath}`); await create(); await setUpRepo();
     userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);

@@ -6,7 +6,7 @@ import { BskyAgent } from '@atproto/api';
 import app, { wss } from '../src/server.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
-import { db, connect } from '../src/db.js';
+import { db, setUpForTesting, create } from '../src/db.js';
 import { setUpRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import fs from 'fs';
@@ -35,7 +35,7 @@ describe('PDS Local Tests', () => {
     const dbName = `test-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
 
-    await connect(`file:${dbPath}`); await setUpRepo();
+    await setUpForTesting(`file:${dbPath}`); await create(); await setUpRepo();
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {

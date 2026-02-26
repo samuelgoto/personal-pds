@@ -1,13 +1,17 @@
 import { createClient } from '@libsql/client';
 
-export let db;
+export let db = createClient({
+  url: process.env.TURSO_DATABASE_URL || 'file:local.db',
+  authToken: process.env.TURSO_AUTH_TOKEN
+});
 
-export async function connect(url = process.env.TURSO_DATABASE_URL) {
-  if (!db) {
-    const authToken = process.env.TURSO_AUTH_TOKEN;
-    db = createClient({ url, authToken });
-  }
+export async function setUpForTesting(url) {
+  // We don't necessarily need to close the old one here because 
+  // Jest runs suites in isolation, but it's good practice.
+  db = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+}
 
+export async function create() {
   await db.batch([
     `CREATE TABLE IF NOT EXISTS repo_blocks (
       cid TEXT PRIMARY KEY,
@@ -66,8 +70,18 @@ export async function connect(url = process.env.TURSO_DATABASE_URL) {
 export async function disconnect() {
   if (db) {
     await db.close();
-    db = null;
   }
 }
 
-
+export async function destroy() {
+  await db.batch([
+    'DELETE FROM repo_blocks',
+    'DELETE FROM sequencer',
+    'DELETE FROM blobs',
+    'DELETE FROM sessions',
+    'DELETE FROM preferences',
+    'DELETE FROM oauth_codes',
+    'DELETE FROM oauth_refresh_tokens',
+    'DELETE FROM oauth_par_requests'
+  ], "write");
+}
