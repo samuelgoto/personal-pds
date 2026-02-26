@@ -23,7 +23,6 @@ export const wss = new WebSocketServer({ noServer: true });
 
 // Unify WebSocket handling via Sequencer
 wss.on('connection', (ws, req) => {
-  console.log('New firehose subscriber connected (via sequencer)');
   const url = new URL(req.url, `http://${req.headers.host}`);
   const cursor = url.searchParams.get('cursor');
   sequencer.addClient(ws, cursor ? parseInt(cursor, 10) : undefined);

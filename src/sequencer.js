@@ -27,7 +27,6 @@ class Sequencer {
   }
 
   async backfill(ws, cursor) {
-    console.log(`[SEQUENCER] Backfilling from cursor: ${cursor}`);
     try {
         const res = await db.execute({
           sql: 'SELECT * FROM sequencer WHERE seq > ? ORDER BY seq ASC LIMIT 100',
@@ -73,7 +72,6 @@ class Sequencer {
         event: encoded
     });
 
-    console.log(`[SEQUENCER] Broadcasting seq ${seq} to ${this.clients.size} clients`);
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(fullEvent);
@@ -92,7 +90,6 @@ class Sequencer {
   formatEvent(row) {
     const header = { op: 1, t: `#${row.type}` };
     const encodedHeader = cbor.encode(header);
-    console.log(`[SEQUENCER] Formatting event: type=${row.type}, header_len=${encodedHeader.length}, body_len=${row.event.length}`);
     return Buffer.concat([
         Buffer.from(encodedHeader),
         Buffer.from(row.event)
