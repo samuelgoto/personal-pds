@@ -7,7 +7,7 @@ import app, { wss } from '../src/server.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
 import { db, connect } from '../src/db.js';
-import { TursoStorage, loadRepo, maybeInitRepo } from '../src/repo.js';
+import { TursoStorage, loadRepo, setUpRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import { readCarWithRoot } from '@atproto/repo';
 import fs from 'fs';
@@ -36,7 +36,7 @@ describe('Relay Interaction & Protocol Compliance', () => {
     const dbName = `relay-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
 
-    await connect(`file:${dbPath}`); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await setUpRepo();
     userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);

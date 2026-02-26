@@ -7,7 +7,7 @@ import app, { wss } from '../src/server.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
 import { db, connect } from '../src/db.js';
-import { maybeInitRepo } from '../src/repo.js';
+import { setUpRepo } from '../src/repo.js';
 import { WebSocket } from 'ws';
 import fs from 'fs';
 import path from 'path';
@@ -35,7 +35,7 @@ describe('PDS Local Tests', () => {
     const dbName = `test-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
 
-    await connect(`file:${dbPath}`); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await setUpRepo();
 
     server = http.createServer(app);
     server.on('upgrade', (request, socket, head) => {

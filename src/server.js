@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
 import { createToken, verifyToken, validateDpop, getJkt, createServiceAuthToken, auth } from './auth.js';
-import { TursoStorage, getRootCid, maybeInitRepo } from './repo.js';
+import { TursoStorage, getRootCid, setUpRepo } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
 import { createHash, randomBytes, createPublicKey, createECDH } from 'crypto';

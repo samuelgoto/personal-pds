@@ -123,7 +123,7 @@ export const getRootCid = async () => {
   }
 };
 
-export async function maybeInitRepo() {
+export async function setUpRepo() {
   const rootCid = await getRootCid();
   if (rootCid) return;
 

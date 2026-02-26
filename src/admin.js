@@ -2,6 +2,7 @@ import express from 'express';
 import { db } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
 import { sequencer } from './sequencer.js';
+import { setUpRepo } from './repo.js';
 
 const router = express.Router();
 
@@ -151,7 +152,10 @@ router.post('/debug/reset', async (req, res) => {
     await db.execute('DELETE FROM oauth_refresh_tokens');
     await db.execute('DELETE FROM oauth_par_requests');
     
-    res.send('<h1>Success</h1><p>PDS has been wiped clean.</p><a href="/">Back to Dashboard</a>');
+    // Re-initialize an empty repo so the PDS remains in a valid state
+    await setUpRepo();
+    
+    res.send('<h1>Success</h1><p>PDS has been wiped clean and re-initialized.</p><a href="/">Back to Dashboard</a>');
 });
 
 export default router;

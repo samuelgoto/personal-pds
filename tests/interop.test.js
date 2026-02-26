@@ -6,7 +6,7 @@ import app, { wss } from '../src/server.js';
 import { sequencer } from '../src/sequencer.js';
 import * as crypto from '@atproto/crypto';
 import { db, connect } from '../src/db.js';
-import { maybeInitRepo } from '../src/repo.js';
+import { setUpRepo } from '../src/repo.js';
 import { readCarWithRoot } from '@atproto/repo';
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,7 @@ describe('PDS Interoperability Tests', () => {
     const dbName = `interop-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
 
-    await connect(`file:${dbPath}`); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await setUpRepo();
     userDid = process.env.PDS_DID; // Server strips port
 
     server = http.createServer(app);

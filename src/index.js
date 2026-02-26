@@ -3,7 +3,7 @@ import http from 'http';
 import axios from 'axios';
 import { connect, db } from './db.js';
 import app, { wss } from './server.js';
-import { maybeInitRepo } from './repo.js';
+import { setUpRepo } from './repo.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -25,7 +25,7 @@ if (!process.env.TURSO_DATABASE_URL) throw new Error('Missing TURSO_DATABASE_URL
 
 console.log('Initializing PDS...');
 await connect();
-await maybeInitRepo();
+await setUpRepo();
 console.log('Initialization complete.');
 
 const server = http.createServer(app);

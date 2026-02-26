@@ -5,7 +5,7 @@ import axios from 'axios';
 import nock from 'nock';
 import app, { wss } from '../src/server.js';
 import { db, connect } from '../src/db.js';
-import { maybeInitRepo } from '../src/repo.js';
+import { setUpRepo } from '../src/repo.js';
 import { sequencer } from '../src/sequencer.js';
 import fs from 'fs';
 import path from 'path';
@@ -32,7 +32,7 @@ describe('ATProto XRPC Lexicon Compliance', () => {
     const dbName = `compliance-${Date.now()}.db`;
     dbPath = path.join(__dirname, dbName);
 
-    await connect(`file:${dbPath}`); await maybeInitRepo();
+    await connect(`file:${dbPath}`); await setUpRepo();
     userDid = process.env.PDS_DID;
 
     server = http.createServer(app);
