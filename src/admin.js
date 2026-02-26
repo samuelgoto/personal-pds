@@ -26,24 +26,13 @@ router.get('/', async (req, res) => {
     }
   });
 
-  // Get last 10 blocks
-  const lastBlocksRes = await db.execute("SELECT * FROM repo_blocks LIMIT 10");
-  const blocks = lastBlocksRes.rows.map(row => {
-    try {
-      const data = cbor.decode(new Uint8Array(row.block));
-      return { cid: row.cid, data };
-    } catch (e) {
-      return { cid: row.cid, data: { error: 'Failed to decode CBOR' } };
-    }
-  });
-
   const html = `
 <!DOCTYPE html>
 <html>
 <head>
     <title>Personal PDS Dashboard</title>
     <style>
-        body { font-family: -apple-system, sans-serif; line-height: 1.6; max-width: 1100px; margin: 40px auto; padding: 20px; background: #f4f4f9; color: #333; }
+        body { font-family: -apple-system, sans-serif; line-height: 1.6; max-width: 900px; margin: 40px auto; padding: 20px; background: #f4f4f9; color: #333; }
         .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
         h1 { color: #007bff; display: flex; align-items: center; gap: 10px; }
         h2 { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
@@ -66,8 +55,6 @@ router.get('/', async (req, res) => {
         .op-delete { background: #f8d7da; color: #721c24; }
         .actions { display: flex; gap: 10px; margin-top: 10px; }
         #action-result { margin-top: 10px; padding: 10px; border-radius: 4px; display: none; }
-        .block-item { background: #f8f9fa; border-radius: 4px; padding: 10px; margin-bottom: 10px; border: 1px solid #eee; }
-        .block-item pre { margin: 10px 0 0 0; font-size: 0.8rem; overflow-x: auto; background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #ddd; }
     </style>
 </head>
 <body>
@@ -92,36 +79,18 @@ router.get('/', async (req, res) => {
         </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px;">
-        <div class="card">
-            <h2>Recent Activity</h2>
-            <div id="activity-feed">
-                ${events.length === 0 ? '<p>No activity yet.</p>' : events.map(e => `
-                    <div class="activity-item">
-                        <strong>Seq ${e.seq}</strong> <span style="color: #999;">${new Date(e.time).toLocaleTimeString()}</span><br/>
-                        ${e.ops.map(op => `
-                            <span class="op-tag op-${op.action}">${op.action}</span> 
-                            <span class="value">${op.path}</span>
-                        `).join('<br/>')}
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Recent Blocks (Storage)</h2>
-            <div id="blocks-feed">
-                ${blocks.length === 0 ? '<p>No blocks stored.</p>' : blocks.map(b => `
-                    <div class="block-item">
-                        <div style="font-size: 0.8rem; color: #657786; font-family: monospace; word-break: break-all;">${b.cid}</div>
-                        <pre>${JSON.stringify(b.data, (key, value) => {
-                            if (value instanceof Uint8Array) return `[Buffer ${value.length}]`;
-                            if (value && typeof value === 'object' && value.asCID === value) return value.toString();
-                            return value;
-                        }, 2)}</pre>
-                    </div>
-                `).join('')}
-            </div>
+    <div class="card">
+        <h2>Recent Activity</h2>
+        <div id="activity-feed">
+            ${events.length === 0 ? '<p>No activity yet.</p>' : events.map(e => `
+                <div class="activity-item">
+                    <strong>Seq ${e.seq}</strong> <span style="color: #999;">${new Date(e.time).toLocaleTimeString()}</span><br/>
+                    ${e.ops.map(op => `
+                        <span class="op-tag op-${op.action}">${op.action}</span> 
+                        <span class="value">${op.path}</span>
+                    `).join('<br/>')}
+                </div>
+            `).join('')}
         </div>
     </div>
 
