@@ -11,6 +11,21 @@ router.get('/', async (req, res) => {
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
   const subscriberCount = sequencer.getSubscriberCount();
 
+  // Get last 10 events
+  const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
+  const events = lastEventsRes.rows.map(row => {
+    try {
+      const evt = cbor.decode(new Uint8Array(row.event));
+      return {
+        seq: row.seq,
+        time: row.time,
+        ops: evt.ops || []
+      };
+    } catch (e) {
+      return { seq: row.seq, time: row.time, ops: [] };
+    }
+  });
+
   // Get last 10 blocks
   const lastBlocksRes = await db.execute("SELECT * FROM repo_blocks LIMIT 10");
   const blocks = lastBlocksRes.rows.map(row => {
