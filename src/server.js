@@ -87,6 +87,30 @@ app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
   });
 });
 
+app.post('/xrpc/com.atproto.identity.updateHandle', auth, async (req, res) => {
+  const { handle } = req.body;
+  if (handle !== req.user.handle) {
+    return res.status(400).json({ 
+      error: 'InvalidRequest', 
+      message: `This PDS only supports the handle ${req.user.handle}. Please update your .env if you wish to change it.` 
+    });
+  }
+  console.log(`[IDENTITY] Update handle confirmed: ${handle}`);
+  res.json({});
+});
+
+app.post('/xrpc/com.atproto.server.updateHandle', auth, async (req, res) => {
+  const { handle } = req.body;
+  if (handle !== req.user.handle) {
+    return res.status(400).json({ 
+      error: 'InvalidRequest', 
+      message: `This PDS only supports the handle ${req.user.handle}.` 
+    });
+  }
+  console.log(`[SERVER] Update handle confirmed: ${handle}`);
+  res.json({});
+});
+
 // 4. Favicon handler
 app.get('/favicon.ico', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
