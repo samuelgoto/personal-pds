@@ -146,6 +146,10 @@ router.post('/debug/reset', async (req, res) => {
     await db.execute('DELETE FROM sequencer');
     await db.execute('DELETE FROM blobs');
     await db.execute('DELETE FROM sessions');
+    await db.execute('DELETE FROM preferences');
+    await db.execute('DELETE FROM oauth_codes');
+    await db.execute('DELETE FROM oauth_refresh_tokens');
+    await db.execute('DELETE FROM oauth_par_requests');
     
     res.send('<h1>Success</h1><p>PDS has been wiped clean.</p><a href="/">Back to Dashboard</a>');
 });
