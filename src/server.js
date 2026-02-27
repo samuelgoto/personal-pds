@@ -559,10 +559,10 @@ const getRecordHelper = async (repo, collection, rkey, user) => {
   }
 };
 
-app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
+app.get('/xrpc/com.atproto.repo.listRecords', async (req, res, next) => {
     const { repo, collection } = req.query;
     if (repo.toLowerCase() !== req.user.did.toLowerCase() && repo.toLowerCase() !== req.user.handle.toLowerCase()) {
-        return res.status(404).json({ error: 'RepoNotFound' });
+        return next();
     }
 
     const storage = new TursoStorage();
@@ -585,19 +585,19 @@ app.get('/xrpc/com.atproto.repo.listRecords', async (req, res) => {
     res.json({ records });
 });
 
-app.get('/xrpc/com.atproto.repo.getRecord', async (req, res) => {
+app.get('/xrpc/com.atproto.repo.getRecord', async (req, res, next) => {
   const { repo, collection, rkey } = req.query;
   const record = await getRecordHelper(repo, collection, rkey, req.user);
   
-  if (!record) return res.status(404).json({ error: 'RecordNotFound' });
+  if (!record) return next();
   
-  res.json({ uri: `at://${req.user.did}/${collection}/${rkey}`, value: record.value, cid: record.cid });
+  res.json({ uri: `at://${repo}/${collection}/${rkey}`, value: record.value, cid: record.cid });
 });
 
-app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res) => {
+app.get('/xrpc/com.atproto.repo.describeRepo', async (req, res, next) => {
     const { repo } = req.query;
     if (repo !== req.user.did && repo !== req.user.handle) {
-        return res.status(404).json({ error: 'RepoNotFound' });
+        return next();
     }
 
     const didDoc = await getDidDoc(req.user, req.user.host);
