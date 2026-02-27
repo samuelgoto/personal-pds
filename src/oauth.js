@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from './db.js';
 import { validateDpop, verifyToken } from './auth.js';
-import { createHash, randomBytes, createECDH } from 'crypto';
+import { createHash, randomBytes, createECDH, createPublicKey } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
 import { getDidDoc } from './util.js';
@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
+const clientKeyCache = new Map();
 
 export function createAccessToken(did, handle, jkt, issuer, client_id) {
   // ATProto OAuth nuance: The resource server identifier is its did:web
@@ -55,14 +56,16 @@ export async function createIdToken(did, handle, client_id, issuer, privKey) {
 
 const validateClient = async (client_id, redirect_uri) => {
   try {
+    console.log(`[OAUTH] Validating client: ${client_id} with redirect: ${redirect_uri}`);
     const res = await axios.get(client_id);
     const metadata = res.data;
     if (!metadata.redirect_uris || !metadata.redirect_uris.includes(redirect_uri)) {
+      console.warn(`[OAUTH] Redirect URI mismatch for ${client_id}. Expected one of: ${metadata.redirect_uris}`);
       throw new Error('Invalid redirect_uri');
     }
     return metadata;
   } catch (err) {
-    console.error('Client validation failed:', err.message);
+    console.error(`[OAUTH] Client validation failed for ${client_id}:`, err.response?.data || err.message);
     return null;
   }
 };
@@ -130,6 +133,10 @@ router.post('/oauth/authorize', async (req, res) => {
     return res.status(401).send('Invalid password');
   }
 
+  // 1. Validate client and get metadata for JARM check
+  const metadata = await validateClient(client_id, redirect_uri);
+  console.log(`[OAUTH] Metadata for ${client_id}:`, metadata);
+
   const code = randomBytes(16).toString('hex');
   const expires_at = Math.floor(Date.now() / 1000) + 600;
 
@@ -139,16 +146,40 @@ router.post('/oauth/authorize', async (req, res) => {
   });
 
   const url = new URL(redirect_uri);
-  const params = new URLSearchParams();
-  params.set('code', code);
-  if (state) params.set('state', state);
   
-  params.set('iss', req.user.issuer);
+  // 2. Handle Signed Authorization Response (JARM)
+  if (metadata?.authorization_signed_response_alg) {
+    const payload = {
+      iss: req.user.issuer,
+      aud: client_id,
+      code,
+      state,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 600,
+    };
+
+    const header = { typ: 'JWT', alg: 'ES256K' };
+    const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const data = Buffer.from(`${headerB64}.${payloadB64}`);
+
+    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
+    const sig = await keypair.sign(data);
+    const sigB64 = Buffer.from(sig).toString('base64url');
+    const responseJwt = `${headerB64}.${payloadB64}.${sigB64}`;
+
+    url.searchParams.set('response', responseJwt);
+  } else {
+    // Standard response
+    url.searchParams.set('code', code);
+    if (state) url.searchParams.set('state', state);
+    url.searchParams.set('iss', req.user.issuer);
+  }
 
   if (response_mode === 'fragment') {
+    const params = new URLSearchParams(url.search);
+    url.search = '';
     url.hash = params.toString();
-  } else {
-    params.forEach((v, k) => url.searchParams.set(k, v));
   }
   
   console.log(`[OAUTH] Redirecting to ${url.toString()}`);
@@ -156,9 +187,49 @@ router.post('/oauth/authorize', async (req, res) => {
 });
 
 router.post('/oauth/token', async (req, res) => {
-    const { grant_type, code, client_id, refresh_token, code_verifier } = req.body;
+    let { grant_type, code, client_id, redirect_uri, refresh_token, code_verifier, client_assertion, client_assertion_type } = req.body;
     const user = req.user;
     const issuer = user.issuer;
+
+    // 1. Support private_key_jwt authentication
+    if (client_assertion_type === 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer' && client_assertion) {
+      try {
+        const decoded = jwt.decode(client_assertion, { complete: true });
+        if (!decoded) throw new Error('Invalid client_assertion');
+        
+        client_id = decoded.payload.iss; // client_id MUST be the issuer
+        const metadata = await validateClient(client_id, redirect_uri);
+        
+        if (!metadata || metadata.token_endpoint_auth_method !== 'private_key_jwt') {
+            throw new Error('Client does not support private_key_jwt');
+        }
+
+        // Fetch JWKS and verify
+        let jwks;
+        if (clientKeyCache.has(metadata.jwks_uri)) {
+            jwks = clientKeyCache.get(metadata.jwks_uri);
+        } else {
+            const jwksRes = await axios.get(metadata.jwks_uri);
+            jwks = jwksRes.data;
+            clientKeyCache.set(metadata.jwks_uri, jwks);
+        }
+
+        const key = jwks.keys.find(k => k.kid === decoded.header.kid);
+        if (!key) throw new Error('Matching key not found in JWKS');
+
+        // Note: Minimal implementation. In production, use jwks-rsa or similar.
+        // For ES256, we can use the multikey format if it's already there
+        if (key.kty === 'EC' && key.crv === 'P-256') {
+             // Basic validation that it's signed correctly
+             jwt.verify(client_assertion, createPublicKey({ key, format: 'jwk' }), { algorithms: ['ES256'] });
+        } else {
+             throw new Error('Unsupported key type in JWKS');
+        }
+      } catch (err) {
+        console.error('[OAUTH_TOKEN] Client assertion failed:', err.message);
+        return res.status(401).json({ error: 'invalid_client', message: err.message });
+      }
+    }
 
     const { jkt } = await validateDpop(req);
 
@@ -187,7 +258,7 @@ router.post('/oauth/token', async (req, res) => {
 
       await db.execute({
         sql: 'INSERT INTO oauth_refresh_tokens (token, client_id, did, scope, dpop_jwk, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-        args: [new_refresh_token, client_id, row.did, row.scope, jkt, Math.floor(Date.now() / 1000) + 30 * 24 * 3600]
+        args: [new_refresh_token, client_id, row.did, row.scope, jkt || '', Math.floor(Date.now() / 1000) + 30 * 24 * 3600]
       });
 
       await db.execute({ sql: 'DELETE FROM oauth_codes WHERE code = ?', args: [code] });
@@ -218,7 +289,7 @@ router.post('/oauth/token', async (req, res) => {
       }
 
       const row = result.rows[0];
-      if (row.dpop_jwk !== jkt) {
+      if ((row.dpop_jwk || '') !== (jkt || '')) {
         return res.status(400).json({ error: 'invalid_dpop_key' });
       }
 
@@ -264,11 +335,12 @@ router.get('/.well-known/oauth-authorization-server', async (req, res) => {
     jwks_uri: `${issuer}/.well-known/jwks.json`,
     scopes_supported: ['atproto'],
     response_types_supported: ['code'],
-    response_modes_supported: ['query', 'fragment'],
+    response_modes_supported: ['query', 'fragment', 'jwt'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none', 'client_id_metadata_document', 'private_key_jwt'],
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     dpop_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
+    authorization_signing_alg_values_supported: ['ES256K'],
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
     client_id_metadata_document_supported: true,

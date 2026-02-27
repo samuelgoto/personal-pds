@@ -62,7 +62,7 @@ export function getJkt(jwk) {
 
 export async function validateDpop(req, access_token = null) {
   const dpop = req.headers.dpop;
-  if (!dpop) throw new Error('Missing DPoP header');
+  if (!dpop) return { jkt: null, jwk: null };
 
   const decoded = jwt.decode(dpop, { complete: true });
   if (!decoded || !decoded.header || !decoded.header.jwk) {

@@ -392,4 +392,99 @@ describe('ATProto OAuth Implementation Tests', () => {
         expect(res.data.error).toBe('invalid_grant');
     });
   });
+
+  describe('Advanced OAuth Features (JARM & private_key_jwt)', () => {
+    test('JARM: should return a signed JWT response when requested by client', async () => {
+      const client_id = 'https://jarm-client.com/meta.json';
+      const redirect_uri = 'https://jarm-client.com/callback';
+      
+      nock('https://jarm-client.com')
+        .persist()
+        .get('/meta.json')
+        .reply(200, {
+          client_id,
+          redirect_uris: [redirect_uri],
+          authorization_signed_response_alg: 'RS256'
+        });
+
+      const res = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+        client_id,
+        redirect_uri,
+        password,
+        state: 'jarm-test',
+        code_challenge: 'any',
+        code_challenge_method: 'S256'
+      }).toString(), { maxRedirects: 0, validateStatus: s => s === 302 });
+
+      const redirectUrl = new URL(res.headers.location);
+      // It might be in fragment if response_mode was fragment, but here it's default (query)
+      const responseJwt = redirectUrl.searchParams.get('response') || new URLSearchParams(redirectUrl.hash.slice(1)).get('response');
+      expect(responseJwt).not.toBeNull();
+
+      const decoded = jwt.decode(responseJwt);
+      expect(decoded.iss).toBe(HOST);
+      expect(decoded.aud).toBe(client_id);
+      expect(decoded.state).toBe('jarm-test');
+      expect(decoded.code).toBeDefined();
+    });
+
+    test('private_key_jwt: should authenticate client using signed assertion', async () => {
+      const { generateKeyPairSync } = await import('crypto');
+      const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+      
+      const client_id = 'https://secure-client.com/metadata.json';
+      const jwks_uri = 'https://secure-client.com/jwks.json';
+      const kid = 'test-key-id';
+
+      const jwks = {
+        keys: [{
+          ...publicKey.export({ format: 'jwk' }),
+          kid,
+          alg: 'ES256',
+          use: 'sig'
+        }]
+      };
+
+      nock('https://secure-client.com')
+        .persist()
+        .get('/metadata.json').reply(200, {
+          client_id,
+          redirect_uris: ['https://secure-client.com/callback'],
+          token_endpoint_auth_method: 'private_key_jwt',
+          jwks_uri
+        })
+        .get('/jwks.json').reply(200, jwks);
+
+      // 1. Create a fake code in DB
+      const code = 'secure-code';
+      await db.execute({
+        sql: 'INSERT INTO oauth_codes (code, client_id, redirect_uri, scope, did, dpop_jwk, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        args: [code, client_id, 'https://secure-client.com/callback', 'atproto', 'did:plc:fake', '', Math.floor(Date.now()/1000) + 600]
+      });
+
+      // 2. Create client_assertion
+      const assertion = jwt.sign({
+        iss: client_id,
+        sub: client_id,
+        aud: client_id, // Match what validateClient expects
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 600,
+        jti: 'assertion-id'
+      }, privateKey, { algorithm: 'ES256', header: { kid, alg: 'ES256' } });
+
+      // 3. Request token
+      const res = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: 'https://secure-client.com/callback',
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: assertion
+      }).toString(), {
+          validateStatus: s => true
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.data.access_token).toBeDefined();
+    });
+  });
 });
