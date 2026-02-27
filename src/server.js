@@ -1,6 +1,6 @@
 import express from 'express';
 import { db } from './db.js';
-import { createToken, verifyToken, validateDpop, getJkt, createServiceAuthToken, auth } from './auth.js';
+import { createToken, verifyToken, validateDpop, getJkt, createServiceAuthToken, auth, oauth } from './auth.js';
 import { TursoStorage, getRootCid, setUpRepo } from './repo.js';
 import { Repo, WriteOpAction, blocksToCarFile } from '@atproto/repo';
 import * as crypto from '@atproto/crypto';
@@ -12,7 +12,7 @@ import axios from 'axios';
 import { createBlobCid, fixCids, getDidDoc } from './util.js';
 import { TID } from '@atproto/common';
 import * as cbor from '@ipld/dag-cbor';
-import oauth from './oauth.js';
+import oauthRouter from './oauth.js';
 import admin from './admin.js';
 import proxy from './proxy.js';
 import cors from './cors.js';
@@ -72,7 +72,7 @@ app.use(async (req, res, next) => {
   next();
 });
 
-app.use(oauth);
+app.use(oauthRouter);
 app.use(admin);
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {
@@ -87,7 +87,7 @@ app.get('/xrpc/com.atproto.server.getServiceContext', async (req, res) => {
   });
 });
 
-app.post('/xrpc/com.atproto.identity.updateHandle', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.identity.updateHandle', auth, oauth('atproto'), async (req, res) => {
   const { handle } = req.body;
   if (handle !== req.user.handle) {
     return res.status(400).json({ 
@@ -231,7 +231,7 @@ app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
   res.json({ accessJwt, refreshJwt: accessJwt, handle: user.auth.handle, did: user.auth.sub });
 });
 
-app.get('/xrpc/com.atproto.server.getAccount', auth, async (req, res) => {
+app.get('/xrpc/com.atproto.server.getAccount', auth, oauth('atproto'), async (req, res) => {
   const user = req.user;
   
   const birthDateRes = await db.execute({
@@ -262,7 +262,7 @@ app.get('/xrpc/com.atproto.server.checkAccountStatus', async (req, res) => {
   });
 });
 
-app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
+app.get('/xrpc/com.atproto.server.getSession', auth, oauth('atproto'), async (req, res) => {
   const didDoc = await getDidDoc(req.user, req.user.host);
   res.json({ 
     handle: req.user.auth.handle, 
@@ -275,7 +275,7 @@ app.get('/xrpc/com.atproto.server.getSession', auth, async (req, res) => {
   });
 });
 
-app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
+app.get('/xrpc/app.bsky.actor.getPreferences', auth, oauth('atproto'), async (req, res) => {
   const prefsRes = await db.execute({
     sql: 'SELECT value FROM preferences WHERE key = ?',
     args: [`prefs:${req.user.auth.sub}`]
@@ -294,7 +294,7 @@ app.get('/xrpc/app.bsky.actor.getPreferences', auth, async (req, res) => {
   res.json({ preferences });
 });
 
-app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
+app.post('/xrpc/app.bsky.actor.putPreferences', auth, oauth('atproto'), async (req, res) => {
   const { preferences } = req.body;
   
   // Extract and store birthDate if provided in personalDetailsPref
@@ -313,7 +313,7 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, async (req, res) => {
   res.json({});
 });
 
-app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.repo.createRecord', auth, oauth('atproto'), async (req, res) => {
     const { repo, collection, record, rkey } = req.body;
     if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
@@ -359,7 +359,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, async (req, res) => {
     });
 });
 
-app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.repo.putRecord', auth, oauth('atproto'), async (req, res) => {
   const { repo, collection, rkey, record } = req.body;
   if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
@@ -401,7 +401,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, async (req, res) => {
   });
 });
 
-app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.repo.deleteRecord', auth, oauth('atproto'), async (req, res) => {
   const { repo, collection, rkey } = req.body;
   if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
   
@@ -432,7 +432,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, async (req, res) => {
   res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
 });
 
-app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.repo.applyWrites', auth, oauth('atproto'), async (req, res) => {
   const { repo, writes } = req.body;
   if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
@@ -489,7 +489,7 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, async (req, res) => {
   res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
 });
 
-app.post('/xrpc/com.atproto.repo.uploadBlob', auth, express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
+app.post('/xrpc/com.atproto.repo.uploadBlob', auth, oauth('atproto'), express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
   const content = req.body;
   const mimeType = req.headers['content-type'] || 'application/octet-stream';
   
@@ -677,7 +677,7 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   });
 });
 
-app.post('/xrpc/com.atproto.server.activateAccount', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.server.activateAccount', auth, oauth('atproto'), async (req, res) => {
   console.log(`[FIREHOSE] Emitting #identity and #account for ${req.user.did}`);
   
   await sequencer.sequenceEvent({

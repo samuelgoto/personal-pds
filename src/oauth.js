@@ -12,7 +12,7 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 const clientKeyCache = new Map();
 
-export function createAccessToken(did, handle, jkt, issuer, client_id) {
+export function createAccessToken(did, handle, jkt, issuer, client_id, scope) {
   // ATProto OAuth nuance: The resource server identifier is its did:web
   const pdsHost = issuer.replace(/^https?:\/\//, '');
   const pdsDidWeb = `did:web:${pdsHost}`;
@@ -23,7 +23,7 @@ export function createAccessToken(did, handle, jkt, issuer, client_id) {
     aud: [pdsDidWeb, client_id], // Identifying the PDS by its did:web
     handle,
     cnf: { jkt },
-    scope: 'atproto'
+    scope: scope || 'atproto'
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 }
@@ -260,7 +260,7 @@ router.post('/oauth/token', async (req, res) => {
         }
       }
 
-      const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id);
+      const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id, row.scope);
       const new_refresh_token = randomBytes(32).toString('hex');
 
       await db.execute({
@@ -300,7 +300,7 @@ router.post('/oauth/token', async (req, res) => {
         return res.status(400).json({ error: 'invalid_dpop_key' });
       }
 
-      const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id);
+      const access_token = createAccessToken(row.did, user.handle, jkt, issuer, client_id, row.scope);
       const new_refresh_token = randomBytes(32).toString('hex');
 
       await db.execute({
@@ -340,7 +340,7 @@ router.get('/.well-known/oauth-authorization-server', async (req, res) => {
     pushed_authorization_request_endpoint: `${issuer}/oauth/par`,
     require_pushed_authorization_requests: true,
     jwks_uri: `${issuer}/.well-known/jwks.json`,
-    scopes_supported: ['atproto'],
+    scopes_supported: ['atproto', 'openid'],
     response_types_supported: ['code'],
     response_modes_supported: ['query', 'fragment', 'jwt'],
     grant_types_supported: ['authorization_code', 'refresh_token'],

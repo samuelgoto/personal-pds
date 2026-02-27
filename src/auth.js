@@ -5,7 +5,7 @@ import * as cryptoAtp from '@atproto/crypto';
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 
 export function createToken(did, handle) {
-  return jwt.sign({ sub: did, handle }, JWT_SECRET, { expiresIn: '24h' });
+  return jwt.sign({ sub: did, handle, scope: 'atproto' }, JWT_SECRET, { expiresIn: '24h' });
 }
 
 export async function createServiceAuthToken(aud, lxm, sub, exp = null) {
@@ -156,4 +156,27 @@ export const auth = async (req, res, next) => {
   if (!req.user) req.user = {};
   req.user.auth = payload;
   next();
+};
+
+export const oauth = (requiredScope) => (req, res, next) => {
+  if (!req.user?.auth) {
+    return res.status(401).json({ error: 'AuthenticationRequired' });
+  }
+  
+  const scope = req.user.auth.scope || '';
+  const scopes = scope.split(' ');
+  
+  if (scopes.includes('atproto')) {
+    return next(); // 'atproto' is full access
+  }
+  
+  if (scopes.includes(requiredScope)) {
+    return next();
+  }
+  
+  console.log(`OAuth scope check failed for ${req.url}. Required: ${requiredScope}, Got: ${scope}`);
+  res.status(403).json({ 
+    error: 'InsufficientScope', 
+    message: `This operation requires the '${requiredScope}' scope.` 
+  });
 };

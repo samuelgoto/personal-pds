@@ -338,6 +338,119 @@ describe('ATProto OAuth Implementation Tests', () => {
       expect(decodedId.iss).toBe(HOST);
     });
 
+    test('Scope Enforcement: Token with "openid" scope should be denied "atproto" operations', async () => {
+      const my_client_id = 'http://localhost/client-metadata.json';
+      const my_redirect_uri = 'http://localhost/callback';
+      
+      const codeVerifier = randomBytes(32).toString('base64url');
+      const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+
+      // 1. Authorize with ONLY openid scope
+      const authRes = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+        client_id: my_client_id,
+        redirect_uri: my_redirect_uri,
+        scope: 'openid',
+        state: 'test-state',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        password: password
+      }).toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        maxRedirects: 0,
+        validateStatus: s => s === 302
+      });
+
+      const code = new URL(authRes.headers.location).searchParams.get('code');
+
+      // 2. Exchange for tokens
+      const { generateKeyPairSync } = await import('crypto');
+      const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+      const dpopJwk = publicKey.export({ format: 'jwk' });
+      const dpopHeader = jwt.sign({ htu: `${HOST}/oauth/token`, htm: 'POST', iat: Math.floor(Date.now()/1000), jti: '1' }, privateKey, { algorithm: 'ES256', header: { typ: 'dpop+jwt', alg: 'ES256', jwk: dpopJwk } });
+
+      const tokenRes = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: my_redirect_uri,
+        client_id: my_client_id,
+        code_verifier: codeVerifier
+      }).toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'DPoP': dpopHeader }
+      });
+
+      const accessToken = tokenRes.data.access_token;
+
+      // 3. Attempt to access atproto protected route
+      const protectedDpop = jwt.sign({ htu: `${HOST}/xrpc/com.atproto.server.getSession`, htm: 'GET', iat: Math.floor(Date.now()/1000), jti: '2' }, privateKey, { algorithm: 'ES256', header: { typ: 'dpop+jwt', alg: 'ES256', jwk: dpopJwk } });
+      
+      const sessionRes = await axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {
+        headers: {
+            'Authorization': `DPoP ${accessToken}`,
+            'DPoP': protectedDpop
+        },
+        validateStatus: s => true
+      });
+
+      expect(sessionRes.status).toBe(403);
+      expect(sessionRes.data.error).toBe('InsufficientScope');
+    });
+
+    test('Scope Enforcement: Token with "atproto" scope should be granted access', async () => {
+        const my_client_id = 'http://localhost/client-metadata.json';
+        const my_redirect_uri = 'http://localhost/callback';
+        
+        const codeVerifier = randomBytes(32).toString('base64url');
+        const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+  
+        // 1. Authorize with atproto scope
+        const authRes = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+          client_id: my_client_id,
+          redirect_uri: my_redirect_uri,
+          scope: 'atproto',
+          state: 'test-state',
+          code_challenge: codeChallenge,
+          code_challenge_method: 'S256',
+          password: password
+        }).toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          maxRedirects: 0,
+          validateStatus: s => s === 302
+        });
+  
+        const code = new URL(authRes.headers.location).searchParams.get('code');
+  
+        // 2. Exchange for tokens
+        const { generateKeyPairSync } = await import('crypto');
+        const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        const dpopJwk = publicKey.export({ format: 'jwk' });
+        const dpopHeader = jwt.sign({ htu: `${HOST}/oauth/token`, htm: 'POST', iat: Math.floor(Date.now()/1000), jti: '1' }, privateKey, { algorithm: 'ES256', header: { typ: 'dpop+jwt', alg: 'ES256', jwk: dpopJwk } });
+  
+        const tokenRes = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri: my_redirect_uri,
+          client_id: my_client_id,
+          code_verifier: codeVerifier
+        }).toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'DPoP': dpopHeader }
+        });
+  
+        const accessToken = tokenRes.data.access_token;
+  
+        // 3. Attempt to access atproto protected route
+        const protectedDpop = jwt.sign({ htu: `${HOST}/xrpc/com.atproto.server.getSession`, htm: 'GET', iat: Math.floor(Date.now()/1000), jti: '2' }, privateKey, { algorithm: 'ES256', header: { typ: 'dpop+jwt', alg: 'ES256', jwk: dpopJwk } });
+        
+        const sessionRes = await axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {
+          headers: {
+              'Authorization': `DPoP ${accessToken}`,
+              'DPoP': protectedDpop
+          }
+        });
+  
+        expect(sessionRes.status).toBe(200);
+        expect(sessionRes.data.did).toBe(userDid);
+      });
+
     test('checkAccountStatus returns valid JSON and correct status', async () => {
       // This is a public endpoint used by many clients during login flow
       const res = await axios.get(`${HOST}/xrpc/com.atproto.server.checkAccountStatus`);
