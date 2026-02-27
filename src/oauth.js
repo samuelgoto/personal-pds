@@ -104,11 +104,50 @@ router.get('/oauth/authorize', async (req, res) => {
     await validateClient(client_id, redirect_uri);
   }
 
+  const getScopeDescription = (s) => {
+    const scopes = s.split(' ');
+    return scopes.map(scope => {
+      if (scope === 'atproto') return '<li><strong>Full Access</strong>: Read and write everything in your repository.</li>';
+      if (scope === 'openid') return '<li><strong>Identity</strong>: Verify your DID and handle.</li>';
+      if (scope === 'transition:generic') return '<li><strong>Migration</strong>: Basic access for transitioning from legacy sessions.</li>';
+      if (scope === 'transition:email') return '<li><strong>Email</strong>: View and manage your associated email address.</li>';
+      if (scope === 'transition:chat.bsky') return '<li><strong>Chat</strong>: Send and receive messages on the Bluesky network.</li>';
+      return `<li><strong>${scope}</strong>: Additional application-specific permission.</li>`;
+    }).join('');
+  };
+
   res.send(`
-    <html>
-      <body>
-        <h1>Authorize ${client_id}?</h1>
-        <p>Scope: ${scope}</p>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Authorize Application</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f6f8fa; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
+        h1 { font-size: 1.5rem; margin-top: 0; color: #111; }
+        p { color: #444; line-height: 1.5; font-size: 0.95rem; }
+        .client-id { font-family: monospace; background: #eee; padding: 2px 4px; border-radius: 4px; font-size: 0.85rem; word-break: break-all; }
+        .scope-list { background: #f9f9f9; padding: 1rem; border-radius: 8px; border: 1px solid #eee; margin: 1.5rem 0; }
+        .scope-list ul { margin: 0; padding-left: 1.2rem; }
+        .scope-list li { margin-bottom: 0.5rem; font-size: 0.85rem; color: #555; }
+        .input-group { margin-bottom: 1rem; }
+        input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        button { width: 100%; padding: 12px; background: #0070f3; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 1rem; }
+        button:hover { background: #0060df; }
+        .cancel { display: block; text-align: center; margin-top: 1rem; color: #666; text-decoration: none; font-size: 0.9rem; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>Authorize App</h1>
+        <p>The application <span class="client-id">${client_id}</span> is requesting permission to access your PDS:</p>
+        
+        <div class="scope-list">
+          <ul>${getScopeDescription(scope || 'atproto')}</ul>
+        </div>
+
         <form method="POST" action="/oauth/authorize">
           <input type="hidden" name="client_id" value="${client_id}">
           <input type="hidden" name="redirect_uri" value="${redirect_uri}">
@@ -117,10 +156,15 @@ router.get('/oauth/authorize', async (req, res) => {
           <input type="hidden" name="code_challenge" value="${code_challenge}">
           <input type="hidden" name="code_challenge_method" value="${code_challenge_method || ''}">
           <input type="hidden" name="response_mode" value="${response_mode || ''}">
-          <input type="password" name="password" placeholder="Your PDS Password" required>
-          <button type="submit">Approve</button>
+          
+          <div class="input-group">
+            <input type="password" name="password" placeholder="Confirm PDS Password" required autofocus>
+          </div>
+          <button type="submit">Approve Access</button>
         </form>
-      </body>
+        <a href="${redirect_uri}?error=access_denied" class="cancel">Cancel</a>
+      </div>
+    </body>
     </html>
   `);
 });
