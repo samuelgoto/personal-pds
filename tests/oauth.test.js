@@ -466,7 +466,7 @@ describe('ATProto OAuth Implementation Tests', () => {
       const assertion = jwt.sign({
         iss: client_id,
         sub: client_id,
-        aud: client_id, // Match what validateClient expects
+        aud: HOST, // Match what the PDS now expects
         iat: Math.floor(Date.now() / 1000),
         exp: Math.floor(Date.now() / 1000) + 600,
         jti: 'assertion-id'

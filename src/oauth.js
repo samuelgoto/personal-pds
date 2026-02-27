@@ -59,7 +59,7 @@ const validateClient = async (client_id, redirect_uri) => {
     console.log(`[OAUTH] Validating client: ${client_id} with redirect: ${redirect_uri}`);
     const res = await axios.get(client_id);
     const metadata = res.data;
-    if (!metadata.redirect_uris || !metadata.redirect_uris.includes(redirect_uri)) {
+    if (redirect_uri && (!metadata.redirect_uris || !metadata.redirect_uris.includes(redirect_uri))) {
       console.warn(`[OAUTH] Redirect URI mismatch for ${client_id}. Expected one of: ${metadata.redirect_uris}`);
       throw new Error('Invalid redirect_uri');
     }
@@ -198,7 +198,14 @@ router.post('/oauth/token', async (req, res) => {
         if (!decoded) throw new Error('Invalid client_assertion');
         
         client_id = decoded.payload.iss; // client_id MUST be the issuer
-        const metadata = await validateClient(client_id, redirect_uri);
+        
+        // ATProto nuance: aud must be the issuer or the token endpoint
+        const expectedAud = [issuer, `${issuer}/oauth/token` ];
+        if (!expectedAud.includes(decoded.payload.aud)) {
+            throw new Error(`Invalid audience in client_assertion: expected one of ${expectedAud}, got ${decoded.payload.aud}`);
+        }
+
+        const metadata = await validateClient(client_id, undefined); // No redirect_uri check yet
         
         if (!metadata || metadata.token_endpoint_auth_method !== 'private_key_jwt') {
             throw new Error('Client does not support private_key_jwt');
