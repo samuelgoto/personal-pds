@@ -95,19 +95,28 @@ app.post('/xrpc/com.atproto.identity.updateHandle', auth, async (req, res) => {
       message: `This PDS only supports the handle ${req.user.handle}. Please update your .env if you wish to change it.` 
     });
   }
-  console.log(`[IDENTITY] Update handle confirmed: ${handle}`);
-  res.json({});
-});
+  
+  console.log(`[FIREHOSE] Emitting #identity and #account for ${req.user.did} due to handle update`);
+  
+  await sequencer.sequenceEvent({
+    type: 'identity',
+    did: req.user.did,
+    event: {
+      did: req.user.did,
+      time: new Date().toISOString(),
+    }
+  });
 
-app.post('/xrpc/com.atproto.server.updateHandle', auth, async (req, res) => {
-  const { handle } = req.body;
-  if (handle !== req.user.handle) {
-    return res.status(400).json({ 
-      error: 'InvalidRequest', 
-      message: `This PDS only supports the handle ${req.user.handle}.` 
-    });
-  }
-  console.log(`[SERVER] Update handle confirmed: ${handle}`);
+  await sequencer.sequenceEvent({
+    type: 'account',
+    did: req.user.did,
+    event: {
+      did: req.user.did,
+      active: true,
+      time: new Date().toISOString(),
+    }
+  });
+
   res.json({});
 });
 

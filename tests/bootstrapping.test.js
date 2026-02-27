@@ -62,8 +62,8 @@ describe('PDS Bootstrapping', () => {
     const res = await db.execute("SELECT * FROM sequencer WHERE seq = 1");
     expect(res.rows.length).toBe(1);
     
+    expect(res.rows[0].type).toBe('commit');
     const event = cbor.decode(new Uint8Array(res.rows[0].event));
-    expect(event.type).toBe('commit');
     expect(event.repo).toBe(process.env.PDS_DID);
     expect(event.ops).toEqual([]); // Should be a truly empty genesis commit
     expect(event.since).toBeNull();

@@ -82,18 +82,6 @@ describe('Identity Endpoints', () => {
     }
   });
 
-  test('com.atproto.server.updateHandle should succeed with correct handle', async () => {
-    const agent = new BskyAgent({ service: HOST });
-    await agent.login({ identifier: HANDLE, password: PASSWORD });
-
-    const res = await axios.post(`${HOST}/xrpc/com.atproto.server.updateHandle`, 
-      { handle: HANDLE },
-      { headers: { Authorization: `Bearer ${agent.session.accessJwt}` } }
-    );
-
-    expect(res.status).toBe(200);
-  });
-
   test('com.atproto.server.activateAccount should succeed and trigger firehose', async () => {
     const agent = new BskyAgent({ service: HOST });
     await agent.login({ identifier: HANDLE, password: PASSWORD });
