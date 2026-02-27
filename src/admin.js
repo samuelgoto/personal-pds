@@ -2,7 +2,7 @@ import express from 'express';
 import { db, destroy } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
 import { sequencer } from './sequencer.js';
-import { setUpRepo } from './repo.js';
+import { setUpRepo, getRootCid } from './repo.js';
 
 const router = express.Router();
 
@@ -11,6 +11,7 @@ router.get('/', async (req, res) => {
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
   const subscriberCount = sequencer.getSubscriberCount();
+  const rootCid = await getRootCid();
 
   // Get last 10 events
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
@@ -73,8 +74,10 @@ router.get('/', async (req, res) => {
             <h2>Network & Status</h2>
             <div class="stat"><span class="label">PDS Status</span><span class="value status-ok">Online</span></div>
             <div class="stat"><span class="label">Relay Connections</span><span class="value ${subscriberCount > 0 ? 'status-ok' : 'status-warn'}">${subscriberCount}</span></div>
+            <div class="stat"><span class="label">Repo Head</span><span class="value" style="font-size: 0.8em;">${rootCid}</span></div>
             <div class="actions">
                 <button class="secondary" onclick="runAction('/xrpc/com.atproto.server.describeServer')">Self-Check</button>
+                <button onclick="runAction('/xrpc/com.atproto.server.activateAccount', 'POST')">Activate Account</button>
             </div>
             <div id="action-result"></div>
         </div>
@@ -113,13 +116,41 @@ router.get('/', async (req, res) => {
     </div>
 
     <script>
-        async function runAction(url) {
+        async function runAction(url, method = 'GET') {
             const resDiv = document.getElementById('action-result');
             resDiv.style.display = 'block';
             resDiv.style.background = '#eee';
             resDiv.innerText = 'Running...';
+            
+            let headers = {};
+            let body = undefined;
+
+            if (method === 'POST') {
+                const password = prompt("Enter PDS password for authentication:");
+                if (!password) {
+                    resDiv.style.background = '#f8d7da';
+                    resDiv.innerText = 'Password required for POST actions';
+                    return;
+                }
+                try {
+                    // Quick login to get a token for the action
+                    const loginRes = await fetch('/xrpc/com.atproto.server.createSession', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ identifier: '${user.did}', password })
+                    });
+                    const loginData = await loginRes.json();
+                    if (!loginRes.ok) throw new Error(loginData.message || 'Login failed');
+                    headers['Authorization'] = 'Bearer ' + loginData.accessJwt;
+                } catch (e) {
+                    resDiv.style.background = '#f8d7da';
+                    resDiv.innerText = 'Auth Error: ' + e.message;
+                    return;
+                }
+            }
+
             try {
-                const res = await fetch(url);
+                const res = await fetch(url, { method, headers, body });
                 const data = await res.json();
                 resDiv.style.background = res.ok ? '#e3fcef' : '#f8d7da';
                 resDiv.innerText = JSON.stringify(data, null, 2);

@@ -668,6 +668,31 @@ app.get('/xrpc/com.atproto.sync.getLatestCommit', async (req, res) => {
   });
 });
 
+app.post('/xrpc/com.atproto.server.activateAccount', auth, async (req, res) => {
+  console.log(`[FIREHOSE] Emitting #identity and #account for ${req.user.did}`);
+  
+  await sequencer.sequenceEvent({
+    type: 'identity',
+    did: req.user.did,
+    event: {
+      did: req.user.did,
+      time: new Date().toISOString(),
+    }
+  });
+
+  await sequencer.sequenceEvent({
+    type: 'account',
+    did: req.user.did,
+    event: {
+      did: req.user.did,
+      active: true,
+      time: new Date().toISOString(),
+    }
+  });
+
+  res.json({});
+});
+
 app.get('/xrpc/_health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0' });
 });

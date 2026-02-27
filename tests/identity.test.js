@@ -93,4 +93,16 @@ describe('Identity Endpoints', () => {
 
     expect(res.status).toBe(200);
   });
+
+  test('com.atproto.server.activateAccount should succeed and trigger firehose', async () => {
+    const agent = new BskyAgent({ service: HOST });
+    await agent.login({ identifier: HANDLE, password: PASSWORD });
+
+    const res = await axios.post(`${HOST}/xrpc/com.atproto.server.activateAccount`, 
+      {},
+      { headers: { Authorization: `Bearer ${agent.session.accessJwt}` } }
+    );
+
+    expect(res.status).toBe(200);
+  });
 });

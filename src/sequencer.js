@@ -56,13 +56,10 @@ class Sequencer {
     const seq = res.rows[0].seq;
     
     // 2. Encode the FULL event including the seq and type using DAG-CBOR (canonical)
-    const eventWithSeq = { ...evt.event, seq, type: evt.type };
+    const eventWithSeq = { ...evt.event, seq };
     
-    // Debug: ensure CIDs are objects
-    if (eventWithSeq.commit && typeof eventWithSeq.commit === 'string') {
-        console.error(`[SEQUENCER] WARNING: commit is a string, not CID object! ${eventWithSeq.commit}`);
-    }
-
+    // ATProto nuance: the type in the firehose is often the 't' field in the header, 
+    // but the object itself should match the lexicon.
     const encoded = Buffer.from(cbor.encode(eventWithSeq));
 
     // 3. Update the database with the real encoded event
