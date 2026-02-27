@@ -192,7 +192,7 @@ describe('ATProto OAuth Implementation Tests', () => {
       });
 
       expect(authRes.status).toBe(200);
-      expect(authRes.data).toContain('<h1>Authorize App</h1>');
+      expect(authRes.data).toContain('Example Client');
       expect(authRes.data).toContain(client_id);
       expect(authRes.data).toContain('value="stream-place-state"');
       // Nuance: Verify that the extensive scope is correctly passed through and handled in the form

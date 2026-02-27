@@ -100,19 +100,46 @@ router.get('/oauth/authorize', async (req, res) => {
 
   const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode } = query;
   
+  let metadata = null;
   if (client_id.startsWith('http')) {
-    await validateClient(client_id, redirect_uri);
+    metadata = await validateClient(client_id, redirect_uri);
   }
+
+  const clientName = metadata?.client_name || client_id;
+  const logoUri = metadata?.logo_uri || '';
 
   const getScopeDescription = (s) => {
     const scopes = s.split(' ');
-    return scopes.map(scope => {
+    return scopes.map(scopeStr => {
+      // Handle Resource Indicators (e.g. scope?aud=...)
+      const [scope] = scopeStr.split('?');
+
       if (scope === 'atproto') return '<li><strong>Full Access</strong>: Read and write everything in your repository.</li>';
       if (scope === 'openid') return '<li><strong>Identity</strong>: Verify your DID and handle.</li>';
       if (scope === 'transition:generic') return '<li><strong>Migration</strong>: Basic access for transitioning from legacy sessions.</li>';
       if (scope === 'transition:email') return '<li><strong>Email</strong>: View and manage your associated email address.</li>';
       if (scope === 'transition:chat.bsky') return '<li><strong>Chat</strong>: Send and receive messages on the Bluesky network.</li>';
-      return `<li><strong>${scope}</strong>: Additional application-specific permission.</li>`;
+      
+      // Handle include: scopes (macros) from client metadata
+      if (scope.startsWith('include:')) {
+        const macroName = scope.replace('include:', '');
+        // ATProto nuance: Clients can provide descriptions for these in their metadata
+        const desc = metadata?.scope_descriptions?.[macroName] || metadata?.atproto_scope_descriptions?.[macroName];
+        if (desc) {
+          return `<li><strong>${macroName}</strong>: ${desc}</li>`;
+        }
+        return `<li><strong>${macroName}</strong>: Additional application-specific permission.</li>`;
+      }
+
+      // Handle repo: parameterized scopes
+      if (scope.startsWith('repo')) {
+        const params = new URLSearchParams(scopeStr.split('?')[1] || '');
+        const collection = params.get('collection');
+        const action = params.get('action') || 'all';
+        return `<li><strong>Repository</strong>: ${action} records in <code>${collection || 'all collections'}</code>.</li>`;
+      }
+
+      return `<li><strong>${scope}</strong>: Additional permission.</li>`;
     }).join('');
   };
 
@@ -125,24 +152,38 @@ router.get('/oauth/authorize', async (req, res) => {
       <title>Authorize Application</title>
       <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f6f8fa; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 400px; }
-        h1 { font-size: 1.5rem; margin-top: 0; color: #111; }
-        p { color: #444; line-height: 1.5; font-size: 0.95rem; }
-        .client-id { font-family: monospace; background: #eee; padding: 2px 4px; border-radius: 4px; font-size: 0.85rem; word-break: break-all; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 440px; }
+        .header { display: flex; align-items: center; margin-bottom: 1.5rem; gap: 1rem; }
+        .logo { width: 48px; height: 48px; border-radius: 10px; background: #eee; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #999; flex-shrink: 0; overflow: hidden; }
+        .logo img { width: 100%; height: 100%; object-fit: cover; }
+        h1 { font-size: 1.25rem; margin: 0; color: #111; line-height: 1.2; }
+        p { color: #444; line-height: 1.5; font-size: 0.95rem; margin-top: 0.5rem; }
+        .client-id { font-family: monospace; color: #666; font-size: 0.8rem; word-break: break-all; }
         .scope-list { background: #f9f9f9; padding: 1rem; border-radius: 8px; border: 1px solid #eee; margin: 1.5rem 0; }
         .scope-list ul { margin: 0; padding-left: 1.2rem; }
-        .scope-list li { margin-bottom: 0.5rem; font-size: 0.85rem; color: #555; }
+        .scope-list li { margin-bottom: 0.6rem; font-size: 0.85rem; color: #444; }
         .input-group { margin-bottom: 1rem; }
-        input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
-        button { width: 100%; padding: 12px; background: #0070f3; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 1rem; }
+        input[type="password"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 1rem; }
+        button { width: 100%; padding: 12px; background: #0070f3; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 1rem; }
         button:hover { background: #0060df; }
-        .cancel { display: block; text-align: center; margin-top: 1rem; color: #666; text-decoration: none; font-size: 0.9rem; }
+        .footer { text-align: center; margin-top: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .link { color: #666; text-decoration: none; font-size: 0.85rem; }
+        .link:hover { text-decoration: underline; }
       </style>
     </head>
     <body>
       <div class="card">
-        <h1>Authorize App</h1>
-        <p>The application <span class="client-id">${client_id}</span> is requesting permission to access your PDS:</p>
+        <div class="header">
+          <div class="logo">
+            ${logoUri ? `<img src="${logoUri}" alt="">` : clientName[0].toUpperCase()}
+          </div>
+          <div>
+            <h1>${clientName}</h1>
+            <div class="client-id">${client_id}</div>
+          </div>
+        </div>
+        
+        <p>wants to access your <strong>${req.user.handle}</strong> account.</p>
         
         <div class="scope-list">
           <ul>${getScopeDescription(scope || 'atproto')}</ul>
@@ -160,9 +201,15 @@ router.get('/oauth/authorize', async (req, res) => {
           <div class="input-group">
             <input type="password" name="password" placeholder="Confirm PDS Password" required autofocus>
           </div>
-          <button type="submit">Approve Access</button>
+          <button type="submit">Authorize</button>
         </form>
-        <a href="${redirect_uri}?error=access_denied" class="cancel">Cancel</a>
+        
+        <div class="footer">
+          ${metadata?.client_uri ? `<a href="${metadata.client_uri}" class="link" target="_blank">About the Application</a>` : ''}
+          ${metadata?.policy_uri ? `<a href="${metadata.policy_uri}" class="link" target="_blank">Privacy Policy</a>` : ''}
+          ${metadata?.tos_uri ? `<a href="${metadata.tos_uri}" class="link" target="_blank">Terms of Service</a>` : ''}
+          <a href="${redirect_uri}?error=access_denied" class="link">Cancel and return</a>
+        </div>
       </div>
     </body>
     </html>
