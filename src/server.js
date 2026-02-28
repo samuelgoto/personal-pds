@@ -17,6 +17,7 @@ import oauthRouter from './oauth.js';
 import admin from './admin.js';
 import proxy from './proxy.js';
 import cors from './cors.js';
+import helmet from 'helmet';
 
 const app = express();
 app.set('trust proxy', true);
@@ -66,6 +67,12 @@ wss.on('connection', (ws, req) => {
 
 // 1. CORS middleware (Absolute top)
 app.use(cors);
+
+// 2. Security Headers (Helmet)
+app.use(helmet({
+  contentSecurityPolicy: false, // Disabled for dashboard inline scripts/images
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Allow images from AppViews
+}));
 
 // 3. JSON parser
 app.use(express.json());
