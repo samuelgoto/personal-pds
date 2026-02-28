@@ -14,8 +14,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3002;
-const HOST = `http://localhost:${PORT}`;
+let PORT;
+let HOST;
 const HANDLE = 'identity.test';
 const PASSWORD = 'test-password-123';
 
@@ -36,7 +36,9 @@ describe('Identity Endpoints', () => {
     await setUpRepo();
 
     server = http.createServer(app);
-    await new Promise((resolve) => server.listen(PORT, resolve));
+    await new Promise((resolve) => server.listen(0, resolve));
+    PORT = server.address().port;
+    HOST = `http://localhost:${PORT}`;
   });
 
   afterAll(async () => {
