@@ -25,7 +25,7 @@ app.set('trust proxy', true);
 // 1. Global API Limiter (Protects the whole server from DoS)
 const globalLimiter = rateLimit({
 	windowMs: 15 * 60 * 1000, // 15 minutes
-	limit: 300, // 300 requests per 15 mins per IP
+	limit: 5000, // Increased to 5000 requests per 15 mins (approx 333/min)
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },
@@ -35,7 +35,7 @@ const globalLimiter = rateLimit({
 // 2. Strict Auth Limiter (Brute-force protection)
 const authLimiter = rateLimit({
 	windowMs: 15 * 60 * 1000,
-	limit: 100, // Strict for login/token routes
+	limit: 1000, // Increased to 1000 for single-user convenience
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },
@@ -45,7 +45,7 @@ const authLimiter = rateLimit({
 // 3. Write Limiter (Prevents rapid-fire repo updates)
 const writeLimiter = rateLimit({
 	windowMs: 1 * 60 * 1000, // 1 minute
-	limit: 30, // 30 writes per minute
+	limit: 300, // Increased to 300 writes per minute
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },

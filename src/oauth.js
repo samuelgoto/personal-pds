@@ -12,7 +12,7 @@ const router = express.Router();
 
 const oauthLimiter = rateLimit({
 	windowMs: 15 * 60 * 1000, // 15 minutes
-	limit: 100, // Increased for tests
+	limit: 1000, // Increased to 1000 for convenience
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },
