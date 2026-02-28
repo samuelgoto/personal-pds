@@ -5,9 +5,19 @@ import { createHash, randomBytes, createECDH, createPublicKey } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
 import { getDidDoc, verifyPassword, isSafeUrl } from './util.js';
+import { rateLimit } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();
+
+const oauthLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	limit: 100, // Increased for tests
+	standardHeaders: true,
+	legacyHeaders: false,
+  validate: { trustProxy: false },
+  message: { error: 'RateLimitExceeded', message: 'Too many attempts. Please try again later.' }
+});
 
 const clientKeyCache = new Map();
 
@@ -236,7 +246,7 @@ router.get('/oauth/authorize', async (req, res) => {
   `);
 });
 
-router.post('/oauth/authorize', async (req, res) => {
+router.post('/oauth/authorize', oauthLimiter, async (req, res) => {
   const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode, password } = req.body;
   const user = req.user;
 
@@ -297,7 +307,7 @@ router.post('/oauth/authorize', async (req, res) => {
   res.redirect(url.toString());
 });
 
-router.post('/oauth/token', async (req, res) => {
+router.post('/oauth/token', oauthLimiter, async (req, res) => {
     let { grant_type, code, client_id, redirect_uri, refresh_token, code_verifier, client_assertion, client_assertion_type } = req.body;
     const user = req.user;
     const issuer = user.issuer;

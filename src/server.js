@@ -10,6 +10,7 @@ import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
 import { createBlobCid, fixCids, getDidDoc, verifyPassword } from './util.js';
+import { rateLimit } from 'express-rate-limit';
 import { TID } from '@atproto/common';
 import * as cbor from '@ipld/dag-cbor';
 import oauthRouter from './oauth.js';
@@ -19,6 +20,39 @@ import cors from './cors.js';
 
 const app = express();
 app.set('trust proxy', true);
+
+// 1. Global API Limiter (Protects the whole server from DoS)
+const globalLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	limit: 300, // 300 requests per 15 mins per IP
+	standardHeaders: true,
+	legacyHeaders: false,
+  validate: { trustProxy: false },
+  message: { error: 'RateLimitExceeded', message: 'Too many requests. Please try again later.' }
+});
+
+// 2. Strict Auth Limiter (Brute-force protection)
+const authLimiter = rateLimit({
+	windowMs: 15 * 60 * 1000,
+	limit: 100, // Strict for login/token routes
+	standardHeaders: true,
+	legacyHeaders: false,
+  validate: { trustProxy: false },
+  message: { error: 'RateLimitExceeded', message: 'Too many login attempts. Please try again later.' }
+});
+
+// 3. Write Limiter (Prevents rapid-fire repo updates)
+const writeLimiter = rateLimit({
+	windowMs: 1 * 60 * 1000, // 1 minute
+	limit: 30, // 30 writes per minute
+	standardHeaders: true,
+	legacyHeaders: false,
+  validate: { trustProxy: false },
+  message: { error: 'RateLimitExceeded', message: 'Too many write operations. Please slow down.' }
+});
+
+app.use(globalLimiter);
+
 export const wss = new WebSocketServer({ noServer: true });
 
 // Unify WebSocket handling via Sequencer
@@ -202,7 +236,7 @@ app.get('/xrpc/com.atproto.identity.resolveHandle', async (req, res) => {
 
   return res.status(404).json({ error: 'HandleNotFound' });
 });
-app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
+app.post('/xrpc/com.atproto.server.createSession', authLimiter, async (req, res) => {
   const { identifier, password } = req.body;
   const user = req.user;
   if (!user) {
@@ -223,7 +257,7 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
   const accessJwt = await createToken(user.did, user.handle);  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
 });
 
-app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
+app.post('/xrpc/com.atproto.server.refreshSession', authLimiter, auth, async (req, res) => {
   const user = req.user;
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
   
@@ -313,7 +347,7 @@ app.post('/xrpc/app.bsky.actor.putPreferences', auth, oauth('atproto'), async (r
   res.json({});
 });
 
-app.post('/xrpc/com.atproto.repo.createRecord', auth, oauth('atproto'), async (req, res) => {
+app.post('/xrpc/com.atproto.repo.createRecord', writeLimiter, auth, oauth('atproto'), async (req, res) => {
     const { repo, collection, record, rkey } = req.body;
     if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
     
@@ -359,7 +393,7 @@ app.post('/xrpc/com.atproto.repo.createRecord', auth, oauth('atproto'), async (r
     });
 });
 
-app.post('/xrpc/com.atproto.repo.putRecord', auth, oauth('atproto'), async (req, res) => {
+app.post('/xrpc/com.atproto.repo.putRecord', writeLimiter, auth, oauth('atproto'), async (req, res) => {
   const { repo, collection, rkey, record } = req.body;
   if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
@@ -401,7 +435,7 @@ app.post('/xrpc/com.atproto.repo.putRecord', auth, oauth('atproto'), async (req,
   });
 });
 
-app.post('/xrpc/com.atproto.repo.deleteRecord', auth, oauth('atproto'), async (req, res) => {
+app.post('/xrpc/com.atproto.repo.deleteRecord', writeLimiter, auth, oauth('atproto'), async (req, res) => {
   const { repo, collection, rkey } = req.body;
   if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
   
@@ -432,7 +466,7 @@ app.post('/xrpc/com.atproto.repo.deleteRecord', auth, oauth('atproto'), async (r
   res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
 });
 
-app.post('/xrpc/com.atproto.repo.applyWrites', auth, oauth('atproto'), async (req, res) => {
+app.post('/xrpc/com.atproto.repo.applyWrites', writeLimiter, auth, oauth('atproto'), async (req, res) => {
   const { repo, writes } = req.body;
   if (repo !== req.user.did) return res.status(403).json({ error: 'InvalidRepo' });
 
@@ -489,7 +523,7 @@ app.post('/xrpc/com.atproto.repo.applyWrites', auth, oauth('atproto'), async (re
   res.json({ commit: { cid: updatedRepo.cid.toString(), rev: updatedRepo.commit.rev } });
 });
 
-app.post('/xrpc/com.atproto.repo.uploadBlob', auth, oauth('atproto'), express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
+app.post('/xrpc/com.atproto.repo.uploadBlob', writeLimiter, auth, oauth('atproto'), express.raw({ type: '*/*', limit: '5mb' }), async (req, res) => {
   const content = req.body;
   const mimeType = req.headers['content-type'] || 'application/octet-stream';
   
