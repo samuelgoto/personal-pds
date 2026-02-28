@@ -63,7 +63,7 @@ router.all(/^\/xrpc\/.*/, async (req, res, next) => {
   }
 
   // Identify user for Service Auth 'sub' claim
-  const userDid = verifyToken(req.headers.authorization?.split(' ')[1])?.sub;
+  const userDid = (await verifyToken(req.headers.authorization?.split(' ')[1]))?.sub;
 
   const forwardHeaders = {};
   const whitelist = [

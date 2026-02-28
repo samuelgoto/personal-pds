@@ -220,14 +220,14 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
     return res.status(401).json({ error: 'InvalidPassword' });
   }
 
-  const accessJwt = createToken(user.did, user.handle);  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
+  const accessJwt = await createToken(user.did, user.handle);  res.json({ accessJwt, refreshJwt: accessJwt, handle: user.handle, did: user.did });
 });
 
 app.post('/xrpc/com.atproto.server.refreshSession', auth, async (req, res) => {
   const user = req.user;
   if (!user) return res.status(500).json({ error: 'ServerNotInitialized' });
   
-  const accessJwt = createToken(user.auth.sub, user.auth.handle);
+  const accessJwt = await createToken(user.auth.sub, user.auth.handle);
   res.json({ accessJwt, refreshJwt: accessJwt, handle: user.auth.handle, did: user.auth.sub });
 });
 

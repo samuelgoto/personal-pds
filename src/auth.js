@@ -2,10 +2,28 @@ import jwt from 'jsonwebtoken';
 import { createHash, createPublicKey, createPrivateKey, createECDH, verify as cryptoVerify, randomBytes } from 'crypto';
 import * as cryptoAtp from '@atproto/crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
+export async function createToken(did, handle) {
+  const privKeyHex = process.env.PRIVATE_KEY;
+  if (!privKeyHex) throw new Error('No PDS private key');
+  
+  const payload = { 
+    sub: did, 
+    handle, 
+    scope: 'atproto',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + (24 * 3600)
+  };
 
-export function createToken(did, handle) {
-  return jwt.sign({ sub: did, handle, scope: 'atproto' }, JWT_SECRET, { expiresIn: '24h' });
+  const header = { typ: 'JWT', alg: 'ES256K' };
+  const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const data = Buffer.from(`${headerB64}.${payloadB64}`);
+
+  const keypair = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+  const sig = await keypair.sign(data);
+  const sigB64 = Buffer.from(sig).toString('base64url');
+
+  return `${headerB64}.${payloadB64}.${sigB64}`;
 }
 
 export async function createServiceAuthToken(aud, lxm, sub, exp = null) {
@@ -36,9 +54,28 @@ export async function createServiceAuthToken(aud, lxm, sub, exp = null) {
   return `${headerB64}.${payloadB64}.${sigB64}`;
 }
 
-export function verifyToken(token) {
+export async function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    if (!token) return null;
+    const [headerB64, payloadB64, sigB64] = token.split('.');
+    if (!headerB64 || !payloadB64 || !sigB64) return null;
+    
+    const header = JSON.parse(Buffer.from(headerB64, 'base64url').toString());
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
+    
+    if (header.alg !== 'ES256K') return null;
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+
+    const data = Buffer.from(`${headerB64}.${payloadB64}`);
+    const signature = Buffer.from(sigB64, 'base64url');
+
+    const privKeyHex = process.env.PRIVATE_KEY;
+    if (!privKeyHex) return null;
+
+    const kp = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+    const isVerified = await cryptoAtp.verifySignature(kp.did(), data, signature);
+    
+    return isVerified ? payload : null;
   } catch (err) {
     return null;
   }
@@ -76,11 +113,11 @@ export async function validateDpop(req, access_token = null) {
   try {
     if (jwk.kty === 'EC' && jwk.crv === 'secp256k1') {
       const publicKeyBytes = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]));
-      const keypair = cryptoAtp.Secp256k1Keypair.fromPublicKey(publicKeyBytes);
+      const keypair = await cryptoAtp.Secp256k1Keypair.import(publicKeyBytes);
       const [headerB64, payloadB64, sigB64] = dpop.split('.');
       const data = Buffer.from(`${headerB64}.${payloadB64}`);
       const signature = Buffer.from(sigB64, 'base64url');
-      const verified = await keypair.verify(data, signature);
+      const verified = await cryptoAtp.verifySignature(keypair.did(), data, signature);
       if (!verified) throw new Error('DPoP signature verification failed');
     } else {
       const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
@@ -114,7 +151,7 @@ export async function validateDpop(req, access_token = null) {
 
   // If access_token is provided, verify it's bound to this jkt
   if (access_token) {
-    const payload = verifyToken(access_token);
+    const payload = await verifyToken(access_token);
     if (!payload || !payload.cnf || payload.cnf.jkt !== jkt) {
       throw new Error('Token binding mismatch');
     }
@@ -139,7 +176,7 @@ export const auth = async (req, res, next) => {
   
   if (type === 'DPoP') {
     const { jkt } = await validateDpop(req, jwtToken);
-    const payload = verifyToken(jwtToken);
+    const payload = await verifyToken(jwtToken);
     if (!payload || payload.cnf?.jkt !== jkt) {
       return res.status(401).json({ error: 'InvalidToken', message: 'DPoP binding mismatch' });
     }
@@ -148,7 +185,7 @@ export const auth = async (req, res, next) => {
     return next();
   }
 
-  const payload = verifyToken(jwtToken);
+  const payload = await verifyToken(jwtToken);
   if (!payload) {
     console.log(`Auth failed: Invalid token for ${req.url}`);
     return res.status(401).json({ error: 'InvalidToken' });

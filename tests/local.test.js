@@ -28,8 +28,8 @@ describe('PDS Local Tests', () => {
   let dbPath;
 
   beforeAll(async () => {
-    jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(console, 'error').mockImplementation(() => {});
+    // jest.spyOn(console, 'log').mockImplementation(() => {});
+    // jest.spyOn(console, 'error').mockImplementation(() => {});
     process.env.PASSWORD = PASSWORD;
     process.env.HANDLE = 'localhost.test';
     const dbName = `test-${Date.now()}.db`;
