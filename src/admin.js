@@ -3,6 +3,7 @@ import { db, destroy } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
 import { sequencer } from './sequencer.js';
 import { setUpRepo, getRootCid } from './repo.js';
+import { verifyPassword } from './util.js';
 
 const router = express.Router();
 
@@ -165,11 +166,11 @@ router.get('/', async (req, res) => {
   `;
   res.send(html);
 });
-
 router.post('/debug/reset', async (req, res) => {
-    const { password } = req.body;
-    const user = req.user;
-    if (!password || !user || password !== user.password) {
+  const { password } = req.body;
+  const user = req.user;
+
+  if (!password || !user || !verifyPassword(password, user.password)) {
         return res.status(403).send('<h1>Forbidden</h1><p>Incorrect password.</p><a href="/">Back to Dashboard</a>');
     }
 

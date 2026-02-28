@@ -1,6 +1,7 @@
 import express from 'express';
 import axios from 'axios';
 import { verifyToken, createServiceAuthToken } from './auth.js';
+import { isSafeUrl } from './util.js';
 
 const router = express.Router();
 const serviceCache = new Map();
@@ -57,9 +58,9 @@ router.all(/^\/xrpc\/.*/, async (req, res, next) => {
   
   const method = req.path.replace('/xrpc/', '');
   const targetUrl = await resolveServiceEndpoint(proxyTargetDid);
-  if (!targetUrl) {
-    console.warn(`[PROXY] Could not resolve endpoint for ${proxyTargetDid}`);
-    return res.status(502).json({ error: 'ProxyError', message: `Could not resolve endpoint for ${proxyTargetDid}` });
+  if (!targetUrl || !isSafeUrl(targetUrl)) {
+    console.warn(`[PROXY] Invalid or unsafe endpoint for ${proxyTargetDid}: ${targetUrl}`);
+    return res.status(502).json({ error: 'ProxyError', message: `Could not resolve safe endpoint for ${proxyTargetDid}` });
   }
 
   // Identify user for Service Auth 'sub' claim

@@ -4,7 +4,7 @@ import { validateDpop, verifyToken } from './auth.js';
 import { createHash, randomBytes, createECDH, createPublicKey } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
-import { getDidDoc } from './util.js';
+import { getDidDoc, verifyPassword, isSafeUrl } from './util.js';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();
@@ -68,8 +68,16 @@ export async function createIdToken(did, handle, client_id, issuer, privKey) {
 
 const validateClient = async (client_id, redirect_uri) => {
   try {
+    if (!isSafeUrl(client_id)) {
+      throw new Error('SSRF Blocked: Invalid or unsafe client_id URL.');
+    }
+
     console.log(`[OAUTH] Validating client: ${client_id} with redirect: ${redirect_uri}`);
-    const res = await axios.get(client_id);
+    const res = await axios.get(client_id, { 
+      timeout: 5000,
+      maxRedirects: 3 // Limit redirects to prevent deep chain SSRF
+    });
+    
     const metadata = res.data;
     if (redirect_uri && (!metadata.redirect_uris || !metadata.redirect_uris.includes(redirect_uri))) {
       console.warn(`[OAUTH] Redirect URI mismatch for ${client_id}. Expected one of: ${metadata.redirect_uris}`);
@@ -232,7 +240,7 @@ router.post('/oauth/authorize', async (req, res) => {
   const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode, password } = req.body;
   const user = req.user;
 
-  if (!user || password !== user.password) {
+  if (!user || !verifyPassword(password, user.password)) {
     return res.status(401).send('Invalid password');
   }
 

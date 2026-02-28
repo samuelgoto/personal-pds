@@ -9,7 +9,7 @@ import { CID } from 'multiformats';
 import { sequencer } from './sequencer.js';
 import { WebSocketServer } from 'ws';
 import axios from 'axios';
-import { createBlobCid, fixCids, getDidDoc } from './util.js';
+import { createBlobCid, fixCids, getDidDoc, verifyPassword } from './util.js';
 import { TID } from '@atproto/common';
 import * as cbor from '@ipld/dag-cbor';
 import oauthRouter from './oauth.js';
@@ -215,7 +215,7 @@ app.post('/xrpc/com.atproto.server.createSession', async (req, res) => {
     return res.status(401).json({ error: 'InvalidIdentifier' });
   }
 
-  if (password !== user.password) {
+  if (!verifyPassword(password, user.password)) {
     console.log(`Login failed: Password mismatch for ${identifier}`);
     return res.status(401).json({ error: 'InvalidPassword' });
   }

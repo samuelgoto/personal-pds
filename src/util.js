@@ -1,10 +1,39 @@
 import fs from 'fs';
 import path from 'path';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { CID } from 'multiformats/cid';
 import * as cbor from '@ipld/dag-cbor';
 import * as sha256 from 'multiformats/hashes/sha2';
 import * as crypto from '@atproto/crypto';
+
+export function verifyPassword(inputPassword, storedPassword) {
+  if (typeof inputPassword !== 'string' || typeof storedPassword !== 'string') {
+    return false;
+  }
+  const inputHash = createHash('sha256').update(inputPassword).digest();
+  const storedHash = createHash('sha256').update(storedPassword).digest();
+  return timingSafeEqual(inputHash, storedHash);
+}
+
+export function isSafeUrl(urlStr) {
+  try {
+    const url = new URL(urlStr);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+    const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL;
+    if (isProd) {
+      const hostname = url.hostname;
+      const forbidden = ['localhost', '127.0.0.1', '::1', '169.254.169.254', '0.0.0.0'];
+      if (forbidden.includes(hostname) || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 export const getDidDoc = async (user, host) => {
   if (!user) return null;
