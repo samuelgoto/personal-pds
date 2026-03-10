@@ -56,6 +56,8 @@ A lightweight, modular, single-user AT Protocol Personal Data Server (PDS) built
 - `GET /.well-known/web-identity`: FedCM discovery.
 - `GET /config.json`: FedCM IdP config.
 - `GET /profile`: Public IndieAuth profile URL with `rel="indieauth-metadata"`.
+- `GET /avatar`: User avatar with cross-origin image headers for FedCM/Login Status and IndieAuth profile responses.
+- `GET /logo`: FedCM branding icon with cross-origin image headers.
 - `GET/POST /login`: Browser login page for Login Status + IdP registration.
 - `POST /logout`: Browser logout page.
 - `POST /assertion`: FedCM assertion endpoint returning IndieAuth-style assertion payload.

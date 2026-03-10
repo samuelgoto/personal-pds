@@ -234,7 +234,7 @@ test.describe('FedCM browser flow', () => {
 
     idpServer = http.createServer((req, res) => {
       const url = new URL(req.url, IDP_ORIGIN);
-      if (['/login', '/logout', '/assertion', '/disconnect', '/config.json', '/profile', '/.well-known/web-identity', '/xrpc/com.atproto.sync.getBlob'].includes(url.pathname)) {
+      if (['/login', '/logout', '/assertion', '/disconnect', '/config.json', '/profile', '/.well-known/web-identity', '/avatar', '/logo'].includes(url.pathname)) {
         serverLogs.push(`[IDP] ${req.method} ${url.pathname} origin=${req.headers.origin || ''} sec-fetch-dest=${req.headers['sec-fetch-dest'] || ''}`);
       }
       app(req, res);
@@ -338,6 +338,16 @@ test.describe('FedCM browser flow', () => {
         throw new Error([
           'Expected token exchange to return a profile photo URL.',
           `Exchange result: ${JSON.stringify(exchangeResult)}`,
+          `Browser logs:`,
+          ...pageLogs,
+          `Server logs:`,
+          ...serverLogs,
+        ].join('\n'));
+      }
+      if (exchangeResult.profile.photo !== `${IDP_ORIGIN}/avatar`) {
+        throw new Error([
+          'Expected token exchange profile photo to use the controllable /avatar endpoint.',
+          `Photo URL: ${exchangeResult.profile.photo}`,
           `Browser logs:`,
           ...pageLogs,
           `Server logs:`,

@@ -71,7 +71,15 @@ describe('FedCM identity provider support', () => {
     expect(config.data.id_assertion_endpoint).toBe(`${HOST}/assertion`);
     expect(config.data).not.toHaveProperty('accounts_endpoint');
     expect(config.data.types).toEqual(['indieauth']);
-    expect(config.data.branding.icons).toEqual([{ url: `${HOST}/favicon.ico`, size: 64 }]);
+    expect(config.data.branding.background_color).toBe('#1185fe');
+    expect(config.data.branding.color).toBe('#ffffff');
+    expect(config.data.branding.icons).toEqual([{ url: `${HOST}/logo`, size: 64 }]);
+
+    const logo = await axios.get(`${HOST}/logo`, { responseType: 'arraybuffer' });
+    expect(logo.status).toBe(200);
+    expect(logo.headers['content-type']).toMatch(/^image\/(x-icon|vnd\.microsoft\.icon)$/);
+    expect(logo.headers['access-control-allow-origin']).toBe('*');
+    expect(logo.headers['cross-origin-resource-policy']).toBe('cross-origin');
 
     const profile = await axios.get(`${HOST}/profile`);
     expect(profile.status).toBe(200);
@@ -112,10 +120,11 @@ describe('FedCM identity provider support', () => {
     expect(response.data).toContain('"name":"@localhost.test"');
     expect(response.data).toContain('"email":"@localhost.test"');
     expect(response.data).toContain('"approved_clients":[]');
+    expect(response.data).toContain(`"picture":"${HOST}/avatar"`);
     expect(response.data).not.toContain('"accounts_endpoint"');
   });
 
-  test('login page pushes the local app.bsky.actor.profile display name and avatar', async () => {
+  test('login page pushes the local app.bsky.actor.profile display name and serves the avatar through /avatar', async () => {
     const session = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
       identifier: process.env.HANDLE,
       password: process.env.PASSWORD,
@@ -153,12 +162,15 @@ describe('FedCM identity provider support', () => {
 
     expect(login.status).toBe(200);
     expect(login.data).toContain('"name":"FedCM Test User"');
-    expect(login.data).toContain(
-      '"picture":"http://localhost:3011/xrpc/com.atproto.sync.getBlob?cid='
-    );
-    expect(login.data).toMatch(
-      /http:\/\/localhost:\d+\/xrpc\/com\.atproto\.sync\.getBlob\?cid=/
-    );
+
+    const avatar = await axios.get(`${HOST}/avatar`, { responseType: 'arraybuffer' });
+    expect(avatar.status).toBe(200);
+    expect(avatar.headers['content-type']).toBe('image/png');
+    expect(avatar.headers['access-control-allow-origin']).toBe('*');
+    expect(avatar.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    expect(avatar.data.byteLength).toBeGreaterThan(0);
+
+    expect(login.data).toContain(`"picture":"${HOST}/avatar"`);
   });
 
   test('assertion endpoint returns an OAuth authorization code and records approved clients', async () => {

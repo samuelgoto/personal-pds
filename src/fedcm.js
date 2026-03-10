@@ -1,20 +1,26 @@
 import express from 'express';
+import path from 'path';
 import { randomBytes } from 'crypto';
 import { Repo } from '@atproto/repo';
 import { CID } from 'multiformats';
 import { db } from './db.js';
 import { TursoStorage } from './repo.js';
 import { escapeHtml, isSafeUrl } from './util.js';
+import { fileURLToPath } from 'url';
 
 const router = express.Router();
 
 const ACCOUNT_PUSH_EXPIRATION_MS = 24 * 60 * 60 * 1000;
 const FEDCM_TYPES = ['indieauth'];
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FAVICON_PATH = path.join(__dirname, '..', 'assets', 'favicon.ico');
 
 const getIssuer = (req) => req.user?.issuer || `${req.user?.protocol}://${req.user?.host}`;
 export const getConfigUrl = (req) => `${getIssuer(req)}/config.json`;
 const getMetadataEndpoint = (req) => `${getIssuer(req)}/.well-known/oauth-authorization-server`;
 const getMeUrl = (req) => `${getIssuer(req)}/profile`;
+const getAvatarUrl = (req) => `${getIssuer(req)}/avatar`;
+const getLogoUrl = (req) => `${getIssuer(req)}/logo`;
 
 const getApiConfig = (req) => {
   const issuer = getIssuer(req);
@@ -23,9 +29,9 @@ const getApiConfig = (req) => {
     disconnect_endpoint: `${issuer}/disconnect`,
     login_url: `${issuer}/login`,
     branding: {
-      background_color: '#0f172a',
-      color: '#f8fafc',
-      icons: [{ url: `${issuer}/favicon.ico`, size: 64 }],
+      background_color: '#1185fe',
+      color: '#ffffff',
+      icons: [{ url: getLogoUrl(req), size: 64 }],
     },
   };
 };
@@ -76,10 +82,27 @@ async function loadProfileRecord(user) {
   }
 }
 
-function getBlobUrl(req, blob) {
-  const cid = blob?.ref?.$link;
-  if (!cid) return undefined;
-  return `${getIssuer(req)}/xrpc/com.atproto.sync.getBlob?cid=${encodeURIComponent(cid)}`;
+async function loadAvatarBlob(req) {
+  const profile = await loadProfileRecord(req.user);
+  const cid = profile?.avatar?.ref?.$link;
+  if (!cid) return null;
+
+  const result = await db.execute({
+    sql: 'SELECT mime_type, content FROM blobs WHERE cid = ?',
+    args: [cid],
+  });
+  if (result.rows.length === 0) return null;
+
+  return {
+    mimeType: result.rows[0].mime_type,
+    content: Buffer.from(result.rows[0].content),
+  };
+}
+
+function setImageHeaders(res) {
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 }
 
 export async function buildFedCmAccount(req) {
@@ -94,7 +117,7 @@ export async function buildFedCmAccount(req) {
     name: displayName,
     email: handle,
     given_name: displayName.split(' ')[0],
-    picture: getBlobUrl(req, profile?.avatar),
+    picture: getAvatarUrl(req),
     login_hints: [meUrl, handle, req.user.handle, req.user.did].filter(Boolean),
     approved_clients: approvedClients,
   };
@@ -105,7 +128,7 @@ async function buildIndieAuthProfile(req) {
   return {
     name: profile?.displayName || req.user.handle,
     url: getMeUrl(req),
-    photo: getBlobUrl(req, profile?.avatar),
+    photo: getAvatarUrl(req),
   };
 }
 
@@ -189,6 +212,22 @@ router.get('/profile', async (req, res) => {
   </main>
 </body>
 </html>`);
+});
+
+router.get('/avatar', async (req, res) => {
+  const avatar = await loadAvatarBlob(req);
+  if (!avatar) {
+    return res.status(404).json({ error: 'BlobNotFound' });
+  }
+
+  setImageHeaders(res);
+  res.setHeader('Content-Type', avatar.mimeType || 'application/octet-stream');
+  res.send(avatar.content);
+});
+
+router.get('/logo', async (req, res) => {
+  setImageHeaders(res);
+  res.sendFile(FAVICON_PATH);
 });
 
 router.get('/icon', async (req, res) => {
