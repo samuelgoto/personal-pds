@@ -313,12 +313,12 @@ router.get('/', requireBrowserSession, async (req, res) => {
                 ${avatarHtml}
                 <div>
                     <p class="profile-name">${escapeHtml(account.name)}</p>
-                    <p class="profile-handle">${escapeHtml(account.username || user.handle)}</p>
+                    <p class="profile-handle">${escapeHtml(account.email || `@${user.handle}`)}</p>
                 </div>
             </div>
             <p class="profile-note">This is the identity metadata the PDS publishes from <code>app.bsky.actor.profile</code> and uses for FedCM and IndieAuth.</p>
             <div class="stat"><span class="label">Display Name</span><span class="value">${escapeHtml(account.name)}</span></div>
-            <div class="stat"><span class="label">Username</span><span class="value">${escapeHtml(account.username || user.handle)}</span></div>
+            <div class="stat"><span class="label">Handle</span><span class="value">${escapeHtml(account.email || `@${user.handle}`)}</span></div>
             <div class="stat"><span class="label">Profile URL</span><span class="value">${escapeHtml(account.id)}</span></div>
             <div class="stat"><span class="label">Avatar URL</span><span class="value">${escapeHtml(account.picture || 'Not set')}</span></div>
         </div>

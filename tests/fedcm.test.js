@@ -117,9 +117,9 @@ describe('FedCM identity provider support', () => {
     expect(accounts.status).toBe(200);
     expect(accounts.data.accounts).toHaveLength(1);
     expect(accounts.data.accounts[0].id).toBe(`${HOST}/profile`);
-    expect(accounts.data.accounts[0].username).toBe('@localhost.test');
     expect(accounts.data.accounts[0].name).toBe('@localhost.test');
-    expect(accounts.data.accounts[0].email).toBe(`${HOST}/profile`);
+    expect(accounts.data.accounts[0].email).toBe('@localhost.test');
+    expect(accounts.data.accounts[0]).not.toHaveProperty('username');
     expect(accounts.data.accounts[0].approved_clients).toEqual([]);
   });
 
