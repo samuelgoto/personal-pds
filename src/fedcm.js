@@ -83,7 +83,7 @@ function getBlobUrl(req, blob) {
   return `${getIssuer(req)}/xrpc/com.atproto.sync.getBlob?cid=${encodeURIComponent(cid)}`;
 }
 
-async function buildFedCmAccount(req) {
+export async function buildFedCmAccount(req) {
   const profile = await loadProfileRecord(req.user);
   const username = req.user.handle.startsWith('@') ? req.user.handle : `@${req.user.handle}`;
   const displayName = profile?.displayName || username;

@@ -67,6 +67,8 @@ describe('Admin Interface', () => {
     expect(res.status).toBe(200);
     expect(res.data).toContain('Personal PDS Dashboard');
     expect(res.data).toContain('admin.test');
+    expect(res.data).toContain('Published Profile');
+    expect(res.data).toContain('@admin.test');
   });
 
   test('should fail to wipe data with incorrect password', async () => {

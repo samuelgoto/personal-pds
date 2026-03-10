@@ -3,9 +3,9 @@ import { db, destroy } from './db.js';
 import * as cbor from '@ipld/dag-cbor';
 import { sequencer } from './sequencer.js';
 import { setUpRepo, getRootCid } from './repo.js';
-import { verifyPassword } from './util.js';
+import { escapeHtml, verifyPassword } from './util.js';
 import { getLoginUrl } from './session.js';
-import { getConfigUrl } from './fedcm.js';
+import { buildFedCmAccount, getConfigUrl } from './fedcm.js';
 
 const router = express.Router();
 
@@ -23,11 +23,15 @@ function requireBrowserSession(req, res, next) {
 
 router.get('/', requireBrowserSession, async (req, res) => {
   const user = req.user;
+  const account = await buildFedCmAccount(req);
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
   const subscriberCount = sequencer.getSubscriberCount();
   const rootCid = await getRootCid();
   const configUrl = getConfigUrl(req);
+  const avatarHtml = account.picture
+    ? `<img class="profile-avatar" src="${escapeHtml(account.picture)}" alt="${escapeHtml(account.name)}">`
+    : '<div class="profile-avatar fallback" aria-hidden="true"></div>';
 
   // Get last 10 events
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
@@ -155,6 +159,38 @@ router.get('/', requireBrowserSession, async (req, res) => {
             flex-wrap: wrap;
             margin-top: 16px;
         }
+        .profile-panel {
+            display: flex;
+            gap: 18px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .profile-avatar {
+            width: 72px;
+            height: 72px;
+            border-radius: 999px;
+            object-fit: cover;
+            background: #dbeafe;
+            border: 1px solid var(--line);
+        }
+        .profile-avatar.fallback {
+            display: block;
+            background: linear-gradient(135deg, #bfdbfe, #e2e8f0);
+        }
+        .profile-name {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+        .profile-handle {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        .profile-note {
+            margin: 0 0 16px;
+            color: var(--muted);
+            line-height: 1.5;
+        }
         a, button {
             appearance: none;
             border: 0;
@@ -269,6 +305,22 @@ router.get('/', requireBrowserSession, async (req, res) => {
             <div class="stat"><span class="label">Handle</span><span class="value">${user.handle}</span></div>
             <div class="stat"><span class="label">DID</span><span class="value">${user.did}</span></div>
             <div class="stat"><span class="label">PDS Domain</span><span class="value">${user.host}</span></div>
+        </div>
+
+        <div class="card">
+            <h2>Published Profile</h2>
+            <div class="profile-panel">
+                ${avatarHtml}
+                <div>
+                    <p class="profile-name">${escapeHtml(account.name)}</p>
+                    <p class="profile-handle">${escapeHtml(account.username || user.handle)}</p>
+                </div>
+            </div>
+            <p class="profile-note">This is the identity metadata the PDS publishes from <code>app.bsky.actor.profile</code> and uses for FedCM and IndieAuth.</p>
+            <div class="stat"><span class="label">Display Name</span><span class="value">${escapeHtml(account.name)}</span></div>
+            <div class="stat"><span class="label">Username</span><span class="value">${escapeHtml(account.username || user.handle)}</span></div>
+            <div class="stat"><span class="label">Profile URL</span><span class="value">${escapeHtml(account.id)}</span></div>
+            <div class="stat"><span class="label">Avatar URL</span><span class="value">${escapeHtml(account.picture || 'Not set')}</span></div>
         </div>
 
         <div class="card">
