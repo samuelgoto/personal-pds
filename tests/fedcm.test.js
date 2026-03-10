@@ -77,7 +77,7 @@ describe('FedCM identity provider support', () => {
 
     const logo = await axios.get(`${HOST}/logo`, { responseType: 'arraybuffer' });
     expect(logo.status).toBe(200);
-    expect(logo.headers['content-type']).toMatch(/^image\/(x-icon|vnd\.microsoft\.icon)$/);
+    expect(logo.headers['content-type']).toBe('image/png');
     expect(logo.headers['access-control-allow-origin']).toBe('*');
     expect(logo.headers['cross-origin-resource-policy']).toBe('cross-origin');
 

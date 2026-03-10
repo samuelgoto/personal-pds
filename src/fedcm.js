@@ -13,7 +13,7 @@ const router = express.Router();
 const ACCOUNT_PUSH_EXPIRATION_MS = 24 * 60 * 60 * 1000;
 const FEDCM_TYPES = ['indieauth'];
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FAVICON_PATH = path.join(__dirname, '..', 'assets', 'favicon.ico');
+const LOGO_PATH = path.join(__dirname, '..', 'assets', 'logo.png');
 
 const getIssuer = (req) => req.user?.issuer || `${req.user?.protocol}://${req.user?.host}`;
 export const getConfigUrl = (req) => `${getIssuer(req)}/config.json`;
@@ -217,7 +217,7 @@ router.get('/profile', async (req, res) => {
 router.get('/avatar', async (req, res) => {
   const avatar = await loadAvatarBlob(req);
   if (!avatar) {
-    return res.status(404).json({ error: 'BlobNotFound' });
+    return res.status(404).end();
   }
 
   setImageHeaders(res);
@@ -227,7 +227,8 @@ router.get('/avatar', async (req, res) => {
 
 router.get('/logo', async (req, res) => {
   setImageHeaders(res);
-  res.sendFile(FAVICON_PATH);
+  res.type('png');
+  res.sendFile(LOGO_PATH);
 });
 
 router.get('/icon', async (req, res) => {
