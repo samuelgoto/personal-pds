@@ -37,6 +37,21 @@ describe('ATProto OAuth Implementation Tests', () => {
   let dbPath;
   const password = 'oauth-pass';
 
+  const browserLogin = async (returnTo = '/') => {
+    const loginRes = await axios.post(
+      `${HOST}/login`,
+      new URLSearchParams({
+        password,
+        return_to: returnTo,
+        auto_return: '1',
+      }).toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }
+    );
+    return loginRes.headers['set-cookie'][0].split(';')[0];
+  };
+
   beforeAll(async () => {
     // Silence console for clean test output
     jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -184,11 +199,13 @@ describe('ATProto OAuth Implementation Tests', () => {
       const request_uri = parRes.data.request_uri;
 
       // 2. Perform the GET /oauth/authorize with the request_uri
+      const cookie = await browserLogin(`/oauth/authorize?client_id=${encodeURIComponent(client_id)}&request_uri=${encodeURIComponent(request_uri)}`);
       const authRes = await axios.get(`${HOST}/oauth/authorize`, {
         params: {
           client_id,
           request_uri
-        }
+        },
+        headers: { Cookie: cookie },
       });
 
       expect(authRes.status).toBe(200);
@@ -197,6 +214,25 @@ describe('ATProto OAuth Implementation Tests', () => {
       expect(authRes.data).toContain('value="stream-place-state"');
       // Nuance: Verify that the extensive scope is correctly passed through and handled in the form
       expect(authRes.data).toContain('value="' + fullScope + '"');
+    });
+
+    test('Authorize UI redirects anonymous browsers to /login', async () => {
+      const res = await axios.get(`${HOST}/oauth/authorize`, {
+        params: {
+          client_id,
+          redirect_uri,
+          scope: 'atproto',
+        },
+        maxRedirects: 0,
+        validateStatus: (status) => status === 302,
+      });
+
+      const loginRedirect = new URL(res.headers.location, HOST);
+      expect(loginRedirect.pathname).toBe('/login');
+      expect(loginRedirect.searchParams.get('auto_return')).toBe('1');
+      const returnTo = loginRedirect.searchParams.get('return_to');
+      expect(returnTo).toContain('/oauth/authorize?client_id=');
+      expect(returnTo).toContain('redirect_uri=https:');
     });
 
     test('Full login flow with PKCE and DPoP binding', async () => {

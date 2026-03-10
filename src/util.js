@@ -35,6 +35,31 @@ export function isSafeUrl(urlStr) {
   }
 }
 
+export function parseCookies(cookieHeader = '') {
+  const cookies = {};
+  for (const part of cookieHeader.split(';')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex === -1) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed.slice(separatorIndex + 1).trim();
+    cookies[key] = decodeURIComponent(value);
+  }
+  return cookies;
+}
+
+export function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 export const getDidDoc = async (user, host) => {
   if (!user) return null;
 

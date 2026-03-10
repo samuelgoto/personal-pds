@@ -4,15 +4,30 @@ import * as cbor from '@ipld/dag-cbor';
 import { sequencer } from './sequencer.js';
 import { setUpRepo, getRootCid } from './repo.js';
 import { verifyPassword } from './util.js';
+import { getLoginUrl } from './session.js';
+import { getConfigUrl } from './fedcm.js';
 
 const router = express.Router();
 
-router.get('/', async (req, res) => {
+function requireBrowserSession(req, res, next) {
+  if (req.session) {
+    return next();
+  }
+
+  if (req.method === 'GET') {
+    return res.redirect(getLoginUrl(req.originalUrl || '/', { autoReturn: true }));
+  }
+
+  return res.status(401).send('<h1>Authentication required</h1><p>Please sign in at <a href="/login">/login</a> first.</p>');
+}
+
+router.get('/', requireBrowserSession, async (req, res) => {
   const user = req.user;
   const blockCountRes = await db.execute('SELECT count(*) as count FROM repo_blocks');
   const eventCountRes = await db.execute('SELECT count(*) as count FROM sequencer');
   const subscriberCount = sequencer.getSubscriberCount();
   const rootCid = await getRootCid();
+  const configUrl = getConfigUrl(req);
 
   // Get last 10 events
   const lastEventsRes = await db.execute("SELECT * FROM sequencer ORDER BY seq DESC LIMIT 10");
@@ -62,6 +77,7 @@ router.get('/', async (req, res) => {
 </head>
 <body>
     <h1><span>🌐</span> Personal PDS Dashboard</h1>
+    <p><a href="/logout">Log out</a></p>
     
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
         <div class="card">
@@ -105,6 +121,15 @@ router.get('/', async (req, res) => {
         <div class="stat"><span class="label">Event Log Size</span><span class="value">${eventCountRes.rows[0].count}</span></div>
         <div class="stat"><span class="label">Node.js</span><span class="value">${process.version}</span></div>
         <div class="stat"><span class="label">Database</span><span class="value">Turso (libSQL)</span></div>
+    </div>
+
+    <div class="card">
+        <h2>Browser Identity</h2>
+        <p>Register this PDS as a FedCM IndieAuth identity provider in the current browser.</p>
+        <div class="actions">
+            <button id="register-fedcm" class="secondary" type="button">Register PDS</button>
+        </div>
+        <div id="fedcm-status" style="margin-top: 10px; white-space: pre-wrap; font-family: monospace; color: #666;">Idle</div>
     </div>
 
     <div class="danger-zone">
@@ -160,13 +185,30 @@ router.get('/', async (req, res) => {
                 resDiv.innerText = 'Error: ' + e.message;
             }
         }
+
+        document.getElementById('register-fedcm')?.addEventListener('click', async () => {
+            const status = document.getElementById('fedcm-status');
+            status.textContent = 'Registering...';
+
+            if (!window.IdentityProvider || typeof IdentityProvider.register !== 'function') {
+                status.textContent = 'IdentityProvider.register is unavailable in this browser.';
+                return;
+            }
+
+            try {
+                const result = await IdentityProvider.register(${JSON.stringify(configUrl)});
+                status.textContent = 'IdentityProvider.register(configUrl) returned: ' + result;
+            } catch (err) {
+                status.textContent = 'IdentityProvider.register failed: ' + err.message;
+            }
+        });
     </script>
 </body>
 </html>
   `;
   res.send(html);
 });
-router.post('/debug/reset', async (req, res) => {
+router.post('/debug/reset', requireBrowserSession, async (req, res) => {
   const { password } = req.body;
   const user = req.user;
 

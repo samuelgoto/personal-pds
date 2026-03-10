@@ -8,7 +8,10 @@
     "gen-key": "node scripts/gen-key.js",
     "setup-profile": "node scripts/setup-profile.js",
     "reset-pds": "node scripts/reset-pds.js",
-    "test": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest"
+    "test": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest && playwright test tests/e2e/fedcm.spec.js",
+    "test:e2e": "playwright test",
+    "test:e2e:fedcm": "playwright test tests/e2e/fedcm.spec.js",
+    "test:e2e:install": "playwright install chromium"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +33,7 @@
   },
   "devDependencies": {
     "@atproto/api": "^0.18.21",
+    "@playwright/test": "^1.58.2",
     "jest": "^30.2.0",
     "nock": "^14.0.11"
   }

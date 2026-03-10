@@ -18,9 +18,17 @@ import admin from './admin.js';
 import proxy from './proxy.js';
 import cors from './cors.js';
 import helmet from 'helmet';
+import fedcmRouter from './fedcm.js';
+import loginRouter from './login.js';
+import { attachSession } from './session.js';
 
 const app = express();
 app.set('trust proxy', true);
+
+const isLocalDevRequest = (req) => {
+  const host = req.get('host') || '';
+  return host.includes('localhost') || host.includes('127.0.0.1');
+};
 
 // 1. Global API Limiter (Protects the whole server from DoS)
 const globalLimiter = rateLimit({
@@ -29,6 +37,7 @@ const globalLimiter = rateLimit({
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },
+  skip: isLocalDevRequest,
   message: { error: 'RateLimitExceeded', message: 'Too many requests. Please try again later.' }
 });
 
@@ -39,6 +48,7 @@ const authLimiter = rateLimit({
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },
+  skip: isLocalDevRequest,
   message: { error: 'RateLimitExceeded', message: 'Too many login attempts. Please try again later.' }
 });
 
@@ -49,6 +59,7 @@ const writeLimiter = rateLimit({
 	standardHeaders: true,
 	legacyHeaders: false,
   validate: { trustProxy: false },
+  skip: isLocalDevRequest,
   message: { error: 'RateLimitExceeded', message: 'Too many write operations. Please slow down.' }
 });
 
@@ -113,7 +124,10 @@ app.use(async (req, res, next) => {
   next();
 });
 
+app.use(attachSession);
 app.use(oauthRouter);
+app.use(loginRouter);
+app.use(fedcmRouter);
 app.use(admin);
 
 app.get('/xrpc/com.atproto.server.describeServer', async (req, res) => {

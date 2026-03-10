@@ -1,12 +1,13 @@
 import express from 'express';
 import { db } from './db.js';
-import { validateDpop, verifyToken } from './auth.js';
+import { createToken, validateDpop, verifyToken } from './auth.js';
 import { createHash, randomBytes, createECDH, createPublicKey } from 'crypto';
 import * as crypto from '@atproto/crypto';
 import axios from 'axios';
 import { getDidDoc, verifyPassword, isSafeUrl } from './util.js';
 import { rateLimit } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import { createSession, getLoginUrl, setSessionCookie } from './session.js';
 
 const router = express.Router();
 
@@ -137,6 +138,12 @@ router.get('/oauth/authorize', async (req, res) => {
 
   const clientName = metadata?.client_name || client_id;
   const logoUri = metadata?.logo_uri || '';
+  const isBrowserLoggedIn = Boolean(req.session);
+
+  if (!isBrowserLoggedIn) {
+    const returnTo = `${req.path}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+    return res.redirect(getLoginUrl(returnTo, { autoReturn: true }));
+  }
 
   const getScopeDescription = (s) => {
     const scopes = s.split(' ');
@@ -227,10 +234,6 @@ router.get('/oauth/authorize', async (req, res) => {
           <input type="hidden" name="code_challenge" value="${code_challenge}">
           <input type="hidden" name="code_challenge_method" value="${code_challenge_method || ''}">
           <input type="hidden" name="response_mode" value="${response_mode || ''}">
-          
-          <div class="input-group">
-            <input type="password" name="password" placeholder="Confirm PDS Password" required autofocus>
-          </div>
           <button type="submit">Authorize</button>
         </form>
         
@@ -250,8 +253,14 @@ router.post('/oauth/authorize', oauthLimiter, async (req, res) => {
   const { client_id, redirect_uri, scope, state, code_challenge, code_challenge_method, response_mode, password } = req.body;
   const user = req.user;
 
-  if (!user || !verifyPassword(password, user.password)) {
+  const hasBrowserSession = Boolean(req.session);
+  if (!user || (!hasBrowserSession && !verifyPassword(password, user.password))) {
     return res.status(401).send('Invalid password');
+  }
+
+  if (!hasBrowserSession) {
+    const { sessionId } = await createSession(user);
+    setSessionCookie(res, sessionId);
   }
 
   // 1. Validate client and get metadata for JARM check
@@ -379,6 +388,26 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         if (hash !== row.dpop_jwk) {
             return res.status(400).json({ error: 'invalid_grant', message: 'PKCE verification failed' });
         }
+      }
+
+      if (row.format === 'indieauth') {
+        const accessToken = await createToken(row.did, user.handle);
+        let profile = {};
+        try {
+          profile = JSON.parse(row.profile || '{}');
+        } catch {
+          profile = {};
+        }
+
+        await db.execute({ sql: 'DELETE FROM oauth_codes WHERE code = ?', args: [code] });
+
+        return res.json({
+          me: row.me,
+          profile,
+          access_token: accessToken,
+          token_type: 'Bearer',
+          scope: row.scope,
+        });
       }
 
       const access_token = await createAccessToken(row.did, user.handle, jkt, issuer, client_id, row.scope);

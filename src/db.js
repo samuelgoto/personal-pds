@@ -48,7 +48,11 @@ export async function create() {
       scope TEXT NOT NULL,
       did TEXT NOT NULL,
       dpop_jwk TEXT NOT NULL,
-      expires_at INTEGER NOT NULL
+      expires_at INTEGER NOT NULL,
+      format TEXT,
+      me TEXT,
+      metadata_endpoint TEXT,
+      profile TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
       token TEXT PRIMARY KEY,
@@ -65,6 +69,23 @@ export async function create() {
       expires_at INTEGER NOT NULL
     )`
   ], "write");
+
+  const oauthCodeColumnMigrations = [
+    'ALTER TABLE oauth_codes ADD COLUMN format TEXT',
+    'ALTER TABLE oauth_codes ADD COLUMN me TEXT',
+    'ALTER TABLE oauth_codes ADD COLUMN metadata_endpoint TEXT',
+    'ALTER TABLE oauth_codes ADD COLUMN profile TEXT',
+  ];
+
+  for (const sql of oauthCodeColumnMigrations) {
+    try {
+      await db.execute(sql);
+    } catch (err) {
+      if (!String(err?.message || '').includes('duplicate column name')) {
+        throw err;
+      }
+    }
+  }
 }
 
 export async function disconnect() {

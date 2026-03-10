@@ -68,8 +68,27 @@ describe('PDS Local Tests', () => {
     expect(agent.session?.handle).toBe(HANDLE);
   });
 
-  test('should serve the dashboard at /', async () => {
-    const res = await axios.get(HOST);
+  test('should redirect anonymous browsers at / to /login', async () => {
+    const res = await axios.get(HOST, {
+      maxRedirects: 0,
+      validateStatus: (status) => status === 302,
+    });
+    expect(res.headers.location).toBe('/login?return_to=%2F&auto_return=1');
+  });
+
+  test('should serve the dashboard at / after browser login', async () => {
+    const login = await axios.post(
+      `${HOST}/login`,
+      new URLSearchParams({ password: PASSWORD, return_to: '/', auto_return: '1' }).toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }
+    );
+    const cookie = login.headers['set-cookie'][0].split(';')[0];
+
+    const res = await axios.get(HOST, {
+      headers: { Cookie: cookie },
+    });
     expect(res.status).toBe(200);
     expect(res.data).toContain('Personal PDS Dashboard');
   });
