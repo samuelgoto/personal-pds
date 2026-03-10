@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import { db } from './db.js';
 import { createToken, verifyToken, validateDpop, getJkt, createServiceAuthToken, auth, oauth } from './auth.js';
 import { TursoStorage, getRootCid, setUpRepo } from './repo.js';
@@ -21,9 +22,13 @@ import helmet from 'helmet';
 import fedcmRouter from './fedcm.js';
 import loginRouter from './login.js';
 import { attachSession } from './session.js';
+import { fileURLToPath } from 'url';
 
 const app = express();
 app.set('trust proxy', true);
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FAVICON_PATH = path.join(__dirname, '..', 'assets', 'favicon.ico');
 
 const isLocalDevRequest = (req) => {
   const host = req.get('host') || '';
@@ -178,7 +183,7 @@ app.post('/xrpc/com.atproto.identity.updateHandle', auth, oauth('atproto'), asyn
 // 4. Favicon handler
 app.get('/favicon.ico', (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-  res.status(204).end();
+  res.sendFile(FAVICON_PATH);
 });
 
 // Helper to get system state

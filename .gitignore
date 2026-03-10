@@ -7,3 +7,4 @@ package-lock.json
 dist/
 .vercel
 .env*.local
+test-results/

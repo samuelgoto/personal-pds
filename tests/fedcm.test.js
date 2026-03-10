@@ -60,13 +60,18 @@ describe('FedCM identity provider support', () => {
     expect(wellKnown.status).toBe(200);
     expect(wellKnown.data.provider_urls).toEqual([`${HOST}/config.json`]);
 
+    const favicon = await axios.get(`${HOST}/favicon.ico`, { responseType: 'arraybuffer' });
+    expect(favicon.status).toBe(200);
+    expect(favicon.headers['content-type']).toMatch(/^image\/(x-icon|vnd\.microsoft\.icon)$/);
+    expect(favicon.data.byteLength).toBeGreaterThan(0);
+
     const config = await axios.get(`${HOST}/config.json`);
     expect(config.status).toBe(200);
     expect(config.data.login_url).toBe(`${HOST}/login`);
     expect(config.data.id_assertion_endpoint).toBe(`${HOST}/assertion`);
     expect(config.data).not.toHaveProperty('accounts_endpoint');
     expect(config.data.types).toEqual(['indieauth']);
-    expect(config.data.branding.icons).toEqual([{ url: 'https://atproto.com/favicon.ico', size: 64 }]);
+    expect(config.data.branding.icons).toEqual([{ url: `${HOST}/favicon.ico`, size: 64 }]);
 
     const profile = await axios.get(`${HOST}/profile`);
     expect(profile.status).toBe(200);

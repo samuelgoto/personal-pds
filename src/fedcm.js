@@ -25,7 +25,7 @@ const getApiConfig = (req) => {
     branding: {
       background_color: '#0f172a',
       color: '#f8fafc',
-      icons: [{ url: 'https://atproto.com/favicon.ico', size: 64 }],
+      icons: [{ url: `${issuer}/favicon.ico`, size: 64 }],
     },
   };
 };
@@ -179,6 +179,7 @@ router.get('/profile', async (req, res) => {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(profile.name)}</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="indieauth-metadata" href="${escapeHtml(metadataEndpoint)}">
 </head>
 <body>

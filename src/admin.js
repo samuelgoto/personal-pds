@@ -53,6 +53,7 @@ router.get('/', requireBrowserSession, async (req, res) => {
 <html>
 <head>
     <title>Personal PDS Dashboard</title>
+    <link rel="icon" href="/favicon.ico" sizes="any">
     <style>
         :root {
             color-scheme: light;

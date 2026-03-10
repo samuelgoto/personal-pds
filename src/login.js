@@ -38,6 +38,7 @@ function renderLoggedOutPage({ returnTo = '/' } = {}) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Signed out</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
 </head>
 <body>
   <script>
@@ -65,6 +66,7 @@ function renderLoginForm(req, { error = '', returnTo = '/', autoReturn = false }
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDS Login</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <style>
     :root {
       --bg: #f3f5f7;
@@ -168,6 +170,7 @@ function renderLoggedInPage(req, { title, message, returnTo, autoReturn, account
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)}</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <style>
     :root {
       color-scheme: light;

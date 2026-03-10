@@ -187,6 +187,7 @@ router.get('/oauth/authorize', async (req, res) => {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Authorize Application</title>
+      <link rel="icon" href="/favicon.ico" sizes="any">
       <style>
         :root {
           color-scheme: light;
