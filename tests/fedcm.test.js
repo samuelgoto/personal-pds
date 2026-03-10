@@ -73,13 +73,24 @@ describe('FedCM identity provider support', () => {
     expect(config.data.types).toEqual(['indieauth']);
     expect(config.data.branding.background_color).toBe('#1a73e8');
     expect(config.data.branding.color).toBe('#fff');
-    expect(config.data.branding.icons).toEqual([{ url: `${HOST}/logo`, size: 64 }]);
+    expect(config.data.branding.icons).toHaveLength(1);
+    expect(config.data.branding.icons[0].url).toMatch(new RegExp(`^${HOST.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/logo\\?v=`));
+    expect(config.data.branding.icons[0].size).toBe(64);
 
-    const logo = await axios.get(`${HOST}/logo`, { responseType: 'arraybuffer' });
+    const logo = await axios.get(config.data.branding.icons[0].url, { responseType: 'arraybuffer' });
     expect(logo.status).toBe(200);
     expect(logo.headers['content-type']).toBe('image/png');
     expect(logo.headers['access-control-allow-origin']).toBe('*');
     expect(logo.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    expect(logo.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(logo.headers.etag).toMatch(/^"logo-/);
+
+    const logoRevalidated = await axios.get(config.data.branding.icons[0].url, {
+      headers: { 'If-None-Match': logo.headers.etag },
+      validateStatus: () => true,
+    });
+    expect(logoRevalidated.status).toBe(304);
+    expect(logoRevalidated.headers['cache-control']).toBe('public, max-age=31536000, immutable');
 
     const profile = await axios.get(`${HOST}/profile`);
     expect(profile.status).toBe(200);
@@ -163,14 +174,24 @@ describe('FedCM identity provider support', () => {
     expect(login.status).toBe(200);
     expect(login.data).toContain('"name":"FedCM Test User"');
 
-    const avatar = await axios.get(`${HOST}/avatar`, { responseType: 'arraybuffer' });
+    const avatarUrl = `${HOST}/avatar?v=${upload.data.blob.ref.$link}`;
+    const avatar = await axios.get(avatarUrl, { responseType: 'arraybuffer' });
     expect(avatar.status).toBe(200);
     expect(avatar.headers['content-type']).toBe('image/png');
     expect(avatar.headers['access-control-allow-origin']).toBe('*');
     expect(avatar.headers['cross-origin-resource-policy']).toBe('cross-origin');
+    expect(avatar.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect(avatar.headers.etag).toBe(`"avatar-${upload.data.blob.ref.$link}"`);
     expect(avatar.data.byteLength).toBeGreaterThan(0);
 
-    expect(login.data).toContain(`"picture":"${HOST}/avatar"`);
+    const avatarRevalidated = await axios.get(avatarUrl, {
+      headers: { 'If-None-Match': avatar.headers.etag },
+      validateStatus: () => true,
+    });
+    expect(avatarRevalidated.status).toBe(304);
+    expect(avatarRevalidated.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+
+    expect(login.data).toContain(`"picture":"${avatarUrl}"`);
   });
 
   test('assertion endpoint returns an OAuth authorization code and records approved clients', async () => {
@@ -234,6 +255,7 @@ describe('FedCM identity provider support', () => {
     expect(tokenResponse.status).toBe(200);
     expect(tokenResponse.data.me).toBe(`${HOST}/profile`);
     expect(tokenResponse.data.profile).toHaveProperty('url', `${HOST}/profile`);
+    expect(tokenResponse.data.profile.photo).toMatch(new RegExp(`^${HOST.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/avatar(?:\\?v=|$)`));
     expect(tokenResponse.data).toHaveProperty('access_token');
     expect(tokenResponse.data).not.toHaveProperty('id_token');
 

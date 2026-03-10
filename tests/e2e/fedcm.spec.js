@@ -344,7 +344,7 @@ test.describe('FedCM browser flow', () => {
           ...serverLogs,
         ].join('\n'));
       }
-      if (exchangeResult.profile.photo !== `${IDP_ORIGIN}/avatar`) {
+      if (!exchangeResult.profile.photo.startsWith(`${IDP_ORIGIN}/avatar`)) {
         throw new Error([
           'Expected token exchange profile photo to use the controllable /avatar endpoint.',
           `Photo URL: ${exchangeResult.profile.photo}`,

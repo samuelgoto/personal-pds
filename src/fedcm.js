@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { randomBytes } from 'crypto';
 import { Repo } from '@atproto/repo';
@@ -14,13 +15,15 @@ const ACCOUNT_PUSH_EXPIRATION_MS = 24 * 60 * 60 * 1000;
 const FEDCM_TYPES = ['indieauth'];
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'logo.png');
+const LOGO_STAT = fs.statSync(LOGO_PATH);
+const LOGO_VERSION = `${LOGO_STAT.size}-${Math.floor(LOGO_STAT.mtimeMs)}`;
 
 const getIssuer = (req) => req.user?.issuer || `${req.user?.protocol}://${req.user?.host}`;
 export const getConfigUrl = (req) => `${getIssuer(req)}/config.json`;
 const getMetadataEndpoint = (req) => `${getIssuer(req)}/.well-known/oauth-authorization-server`;
 const getMeUrl = (req) => `${getIssuer(req)}/profile`;
-const getAvatarUrl = (req) => `${getIssuer(req)}/avatar`;
-const getLogoUrl = (req) => `${getIssuer(req)}/logo`;
+const getAvatarUrl = (req, avatarCid) => avatarCid ? `${getIssuer(req)}/avatar?v=${encodeURIComponent(avatarCid)}` : `${getIssuer(req)}/avatar`;
+const getLogoUrl = (req) => `${getIssuer(req)}/logo?v=${encodeURIComponent(LOGO_VERSION)}`;
 
 const getApiConfig = (req) => {
   const issuer = getIssuer(req);
@@ -94,15 +97,25 @@ async function loadAvatarBlob(req) {
   if (result.rows.length === 0) return null;
 
   return {
+    cid,
     mimeType: result.rows[0].mime_type,
     content: Buffer.from(result.rows[0].content),
   };
 }
 
-function setImageHeaders(res) {
-  res.setHeader('Cache-Control', 'public, max-age=300');
+function setImageHeaders(res, cacheControl, etag) {
+  res.setHeader('Cache-Control', cacheControl);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  if (etag) {
+    res.setHeader('ETag', etag);
+  }
+}
+
+function matchesIfNoneMatch(req, etag) {
+  const header = req.get('if-none-match');
+  if (!header || !etag) return false;
+  return header.split(',').map((value) => value.trim()).includes(etag);
 }
 
 export async function buildFedCmAccount(req) {
@@ -111,13 +124,14 @@ export async function buildFedCmAccount(req) {
   const displayName = profile?.displayName || handle;
   const approvedClients = await getApprovedClients(req.user.did);
   const meUrl = getMeUrl(req);
+  const avatarCid = profile?.avatar?.ref?.$link;
 
   return {
     id: meUrl,
     name: displayName,
     email: handle,
     given_name: displayName.split(' ')[0],
-    picture: getAvatarUrl(req),
+    picture: getAvatarUrl(req, avatarCid),
     login_hints: [meUrl, handle, req.user.handle, req.user.did].filter(Boolean),
     approved_clients: approvedClients,
   };
@@ -125,10 +139,11 @@ export async function buildFedCmAccount(req) {
 
 async function buildIndieAuthProfile(req) {
   const profile = await loadProfileRecord(req.user);
+  const avatarCid = profile?.avatar?.ref?.$link;
   return {
     name: profile?.displayName || req.user.handle,
     url: getMeUrl(req),
-    photo: getAvatarUrl(req),
+    photo: getAvatarUrl(req, avatarCid),
   };
 }
 
@@ -217,16 +232,29 @@ router.get('/profile', async (req, res) => {
 router.get('/avatar', async (req, res) => {
   const avatar = await loadAvatarBlob(req);
   if (!avatar) {
+    res.setHeader('Cache-Control', 'no-store');
     return res.status(404).end();
   }
 
-  setImageHeaders(res);
+  const etag = `"avatar-${avatar.cid}"`;
+  if (matchesIfNoneMatch(req, etag)) {
+    setImageHeaders(res, 'public, max-age=31536000, immutable', etag);
+    return res.status(304).end();
+  }
+
+  setImageHeaders(res, 'public, max-age=31536000, immutable', etag);
   res.setHeader('Content-Type', avatar.mimeType || 'application/octet-stream');
   res.send(avatar.content);
 });
 
 router.get('/logo', async (req, res) => {
-  setImageHeaders(res);
+  const etag = `"logo-${LOGO_VERSION}"`;
+  if (matchesIfNoneMatch(req, etag)) {
+    setImageHeaders(res, 'public, max-age=31536000, immutable', etag);
+    return res.status(304).end();
+  }
+
+  setImageHeaders(res, 'public, max-age=31536000, immutable', etag);
   res.type('png');
   res.sendFile(LOGO_PATH);
 });
