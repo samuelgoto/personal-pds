@@ -71,8 +71,8 @@ describe('FedCM identity provider support', () => {
     expect(config.data.id_assertion_endpoint).toBe(`${HOST}/assertion`);
     expect(config.data).not.toHaveProperty('accounts_endpoint');
     expect(config.data.types).toEqual(['indieauth']);
-    expect(config.data.branding.background_color).toBe('#1185fe');
-    expect(config.data.branding.color).toBe('#ffffff');
+    expect(config.data.branding.background_color).toBe('#1a73e8');
+    expect(config.data.branding.color).toBe('#fff');
     expect(config.data.branding.icons).toEqual([{ url: `${HOST}/logo`, size: 64 }]);
 
     const logo = await axios.get(`${HOST}/logo`, { responseType: 'arraybuffer' });

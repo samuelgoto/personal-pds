@@ -29,8 +29,8 @@ const getApiConfig = (req) => {
     disconnect_endpoint: `${issuer}/disconnect`,
     login_url: `${issuer}/login`,
     branding: {
-      background_color: '#1185fe',
-      color: '#ffffff',
+      background_color: '#1a73e8',
+      color: '#fff',
       icons: [{ url: getLogoUrl(req), size: 64 }],
     },
   };
