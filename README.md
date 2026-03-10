@@ -58,7 +58,6 @@ A lightweight, modular, single-user AT Protocol Personal Data Server (PDS) built
 - `GET /profile`: Public IndieAuth profile URL with `rel="indieauth-metadata"`.
 - `GET/POST /login`: Browser login page for Login Status + IdP registration.
 - `POST /logout`: Browser logout page.
-- `GET /accounts`: FedCM accounts endpoint.
 - `POST /assertion`: FedCM assertion endpoint returning IndieAuth-style assertion payload.
 - `POST /disconnect`: FedCM disconnect endpoint.
 
@@ -128,14 +127,15 @@ npm test
 How the e2e test works:
 - It starts this PDS as the IdP and a tiny local RP in the same test process.
 - The test logs into the IdP at `/login`, submits the PDS password automatically, and waits for the post-login page to push `navigator.login.setStatus(..., { accounts, apiConfig })` successfully.
-- The RP then calls `navigator.credentials.get(...)` with the IdP's explicit `configURL` and `type: "indieauth"`.
+- The RP then calls `navigator.credentials.get(...)` with the IdP's explicit `configURL` and `type: "indieauth"`, relying on the pushed Login Status account data rather than an `/accounts` endpoint.
 - Playwright uses Chromium CDP `FedCm.*` commands to accept the browser-mediated FedCM dialog.
 - The RP parses the assertion JSON, discovers the metadata endpoint, exchanges the code at the token endpoint, and verifies that the returned `me` URL points back to the same IndieAuth metadata endpoint.
+- The test also seeds a real `app.bsky.actor.profile` record, then verifies that the exchanged profile photo URL resolves to a loadable image.
 
 Notes:
 - The e2e test uses a single persistent Chromium context with multiple pages. Separate Playwright browser contexts would isolate the IdP cookies and registration state, which breaks FedCM.
 - The stable automated path uses the IdP's explicit `configURL`. The registration-only `configURL: "any"` flow is intentionally not part of the default suite right now.
-- If the browser flow fails, the test prints browser console logs, CDP FedCM events, and IdP route hits so it is easier to see whether the failure happened before `/accounts` or `/assertion`.
+- If the browser flow fails, the test prints browser console logs, CDP FedCM events, and IdP route hits so it is easier to see whether the failure happened before login-status propagation or `/assertion`.
 
 ## License
 Apache License 2.0

@@ -64,7 +64,9 @@ describe('FedCM identity provider support', () => {
     expect(config.status).toBe(200);
     expect(config.data.login_url).toBe(`${HOST}/login`);
     expect(config.data.id_assertion_endpoint).toBe(`${HOST}/assertion`);
+    expect(config.data).not.toHaveProperty('accounts_endpoint');
     expect(config.data.types).toEqual(['indieauth']);
+    expect(config.data.branding.icons).toEqual([{ url: 'https://atproto.com/favicon.ico', size: 64 }]);
 
     const profile = await axios.get(`${HOST}/profile`);
     expect(profile.status).toBe(200);
@@ -91,7 +93,51 @@ describe('FedCM identity provider support', () => {
     expect(response.data).not.toContain('Register PDS');
   });
 
-  test('accounts endpoint requires a browser session and returns pushed account metadata', async () => {
+  test('login page pushes account metadata through navigator.login.setStatus', async () => {
+    const response = await axios.post(
+      `${HOST}/login`,
+      new URLSearchParams({ password: process.env.PASSWORD }).toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.data).toContain('"id":"http://localhost:3011/profile"');
+    expect(response.data).toContain('"name":"@localhost.test"');
+    expect(response.data).toContain('"email":"@localhost.test"');
+    expect(response.data).toContain('"approved_clients":[]');
+    expect(response.data).not.toContain('"accounts_endpoint"');
+  });
+
+  test('login page pushes the local app.bsky.actor.profile display name and avatar', async () => {
+    const session = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+      identifier: process.env.HANDLE,
+      password: process.env.PASSWORD,
+    });
+    const token = session.data.accessJwt;
+    const did = session.data.did;
+
+    const upload = await axios.post(`${HOST}/xrpc/com.atproto.repo.uploadBlob`, Buffer.from('fedcm-avatar'), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'image/png',
+      },
+    });
+
+    await axios.post(`${HOST}/xrpc/com.atproto.repo.createRecord`, {
+      repo: did,
+      collection: 'app.bsky.actor.profile',
+      rkey: 'self',
+      record: {
+        $type: 'app.bsky.actor.profile',
+        displayName: 'FedCM Test User',
+        avatar: upload.data.blob,
+      },
+    }, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
     const login = await axios.post(
       `${HOST}/login`,
       new URLSearchParams({ password: process.env.PASSWORD }).toString(),
@@ -99,31 +145,23 @@ describe('FedCM identity provider support', () => {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       }
     );
-    const cookie = login.headers['set-cookie'][0].split(';')[0];
 
-    const unauthorized = await axios.get(`${HOST}/accounts`, {
-      headers: { 'Sec-Fetch-Dest': 'webidentity' },
-      validateStatus: () => true,
-    });
-    expect(unauthorized.status).toBe(401);
-
-    const accounts = await axios.get(`${HOST}/accounts`, {
-      headers: {
-        Cookie: cookie,
-        'Sec-Fetch-Dest': 'webidentity',
-      },
-    });
-
-    expect(accounts.status).toBe(200);
-    expect(accounts.data.accounts).toHaveLength(1);
-    expect(accounts.data.accounts[0].id).toBe(`${HOST}/profile`);
-    expect(accounts.data.accounts[0].name).toBe('@localhost.test');
-    expect(accounts.data.accounts[0].email).toBe('@localhost.test');
-    expect(accounts.data.accounts[0]).not.toHaveProperty('username');
-    expect(accounts.data.accounts[0].approved_clients).toEqual([]);
+    expect(login.status).toBe(200);
+    expect(login.data).toContain('"name":"FedCM Test User"');
+    expect(login.data).toContain(
+      '"picture":"http://localhost:3011/xrpc/com.atproto.sync.getBlob?cid='
+    );
+    expect(login.data).toMatch(
+      /http:\/\/localhost:\d+\/xrpc\/com\.atproto\.sync\.getBlob\?cid=/
+    );
   });
 
   test('assertion endpoint returns an OAuth authorization code and records approved clients', async () => {
+    const session = await axios.post(`${HOST}/xrpc/com.atproto.server.createSession`, {
+      identifier: process.env.HANDLE,
+      password: process.env.PASSWORD,
+    });
+    const did = session.data.did;
     const login = await axios.post(
       `${HOST}/login`,
       new URLSearchParams({ password: process.env.PASSWORD }).toString(),
@@ -182,13 +220,11 @@ describe('FedCM identity provider support', () => {
     expect(tokenResponse.data).toHaveProperty('access_token');
     expect(tokenResponse.data).not.toHaveProperty('id_token');
 
-    const accounts = await axios.get(`${HOST}/accounts`, {
-      headers: {
-        Cookie: cookie,
-        'Sec-Fetch-Dest': 'webidentity',
-      },
+    const approvedClientsAfterAssertion = await db.execute({
+      sql: 'SELECT value FROM preferences WHERE key = ?',
+      args: [`fedcm:approved_clients:${did}`],
     });
-    expect(accounts.data.accounts[0].approved_clients).toContain(clientId);
+    expect(JSON.parse(approvedClientsAfterAssertion.rows[0].value)).toContain(clientId);
 
     const disconnect = await axios.post(
       `${HOST}/disconnect`,
@@ -204,12 +240,10 @@ describe('FedCM identity provider support', () => {
     );
     expect(disconnect.status).toBe(200);
 
-    const accountsAfterDisconnect = await axios.get(`${HOST}/accounts`, {
-      headers: {
-        Cookie: cookie,
-        'Sec-Fetch-Dest': 'webidentity',
-      },
+    const approvedClientsAfterDisconnect = await db.execute({
+      sql: 'SELECT value FROM preferences WHERE key = ?',
+      args: [`fedcm:approved_clients:${did}`],
     });
-    expect(accountsAfterDisconnect.data.accounts[0].approved_clients).toEqual([]);
+    expect(JSON.parse(approvedClientsAfterDisconnect.rows[0].value)).toEqual([]);
   });
 });

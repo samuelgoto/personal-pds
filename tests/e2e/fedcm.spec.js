@@ -19,6 +19,10 @@ const ME_URL = `${IDP_ORIGIN}/profile`;
 const IDP_CONFIG_URL = `${IDP_ORIGIN}/config.json`;
 const RP_CODE_VERIFIER = 'playwright-fedcm-code-verifier';
 const RP_CODE_CHALLENGE = createHash('sha256').update(RP_CODE_VERIFIER).digest('base64url');
+const AVATAR_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W7WQAAAAASUVORK5CYII=',
+  'base64'
+);
 
 async function attachFedCmCdp(context, page, pageLogs, label) {
   const cdp = await context.newCDPSession(page);
@@ -73,6 +77,7 @@ function createRpServer() {
   <pre id="result">idle</pre>
   <script>
     const result = document.getElementById('result');
+    window.__exchangeResult = null;
     document.getElementById('login').addEventListener('click', async () => {
       result.textContent = 'requesting';
       try {
@@ -117,6 +122,7 @@ function createRpServer() {
         });
 
         const data = await exchange.json();
+        window.__exchangeResult = data;
         result.textContent = exchange.ok ? 'SIGNED_IN:' + data.me : 'ERROR:' + (data.message || data.error);
       } catch (err) {
         result.textContent = 'ERROR:' + err.name + ':' + err.message;
@@ -182,6 +188,35 @@ function createRpServer() {
   });
 }
 
+async function seedProfile() {
+  const session = await axios.post(`${IDP_ORIGIN}/xrpc/com.atproto.server.createSession`, {
+    identifier: process.env.HANDLE,
+    password: process.env.PASSWORD,
+  });
+  const token = session.data.accessJwt;
+  const did = session.data.did;
+
+  const upload = await axios.post(`${IDP_ORIGIN}/xrpc/com.atproto.repo.uploadBlob`, AVATAR_PNG, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'image/png',
+    },
+  });
+
+  await axios.post(`${IDP_ORIGIN}/xrpc/com.atproto.repo.createRecord`, {
+    repo: did,
+    collection: 'app.bsky.actor.profile',
+    rkey: 'self',
+    record: {
+      $type: 'app.bsky.actor.profile',
+      displayName: 'FedCM Browser User',
+      avatar: upload.data.blob,
+    },
+  }, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
 test.describe('FedCM browser flow', () => {
   let idpServer;
   let rpServer;
@@ -199,7 +234,7 @@ test.describe('FedCM browser flow', () => {
 
     idpServer = http.createServer((req, res) => {
       const url = new URL(req.url, IDP_ORIGIN);
-      if (['/login', '/logout', '/accounts', '/assertion', '/disconnect', '/config.json', '/profile', '/.well-known/web-identity'].includes(url.pathname)) {
+      if (['/login', '/logout', '/assertion', '/disconnect', '/config.json', '/profile', '/.well-known/web-identity', '/xrpc/com.atproto.sync.getBlob'].includes(url.pathname)) {
         serverLogs.push(`[IDP] ${req.method} ${url.pathname} origin=${req.headers.origin || ''} sec-fetch-dest=${req.headers['sec-fetch-dest'] || ''}`);
       }
       app(req, res);
@@ -238,6 +273,7 @@ test.describe('FedCM browser flow', () => {
     test.slow();
     userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'playwright-fedcm-profile-'));
     const pageLogs = [];
+    await seedProfile();
 
     const context = await chromium.launchPersistentContext(userDataDir, {
       headless: true,
@@ -293,6 +329,50 @@ test.describe('FedCM browser flow', () => {
           `Browser logs:`,
           ...pageLogs,
           `Server logs:`,
+          ...serverLogs,
+        ].join('\n'));
+      }
+
+      const exchangeResult = await rpPage.evaluate(() => window.__exchangeResult);
+      if (!exchangeResult?.profile?.photo) {
+        throw new Error([
+          'Expected token exchange to return a profile photo URL.',
+          `Exchange result: ${JSON.stringify(exchangeResult)}`,
+          `Browser logs:`,
+          ...pageLogs,
+          `Server logs:`,
+          ...serverLogs,
+        ].join('\n'));
+      }
+
+      const imageStatus = await idpPage.evaluate((photoUrl) => (
+        new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ ok: true, width: img.naturalWidth, height: img.naturalHeight });
+          img.onerror = () => resolve({ ok: false, width: 0, height: 0 });
+          img.src = photoUrl;
+        })
+      ), exchangeResult.profile.photo);
+
+      if (!imageStatus.ok || imageStatus.width < 1 || imageStatus.height < 1) {
+        throw new Error([
+          `Expected profile photo URL to resolve to a loadable image.`,
+          `Photo URL: ${exchangeResult.profile.photo}`,
+          `Image status: ${JSON.stringify(imageStatus)}`,
+          `Browser logs:`,
+          ...pageLogs,
+          `Server logs:`,
+          ...serverLogs,
+        ].join('\n'));
+      }
+
+      const accountsCalls = serverLogs.filter((entry) => entry.includes(' /accounts '));
+      if (accountsCalls.length > 0) {
+        throw new Error([
+          'Expected FedCM browser flow to rely on navigator.login.setStatus without calling /accounts.',
+          'Observed /accounts traffic:',
+          ...accountsCalls,
+          'Full server logs:',
           ...serverLogs,
         ].join('\n'));
       }

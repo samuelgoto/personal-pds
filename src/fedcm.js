@@ -19,14 +19,13 @@ const getMeUrl = (req) => `${getIssuer(req)}/profile`;
 const getApiConfig = (req) => {
   const issuer = getIssuer(req);
   return {
-    accounts_endpoint: `${issuer}/accounts`,
     id_assertion_endpoint: `${issuer}/assertion`,
     disconnect_endpoint: `${issuer}/disconnect`,
     login_url: `${issuer}/login`,
     branding: {
       background_color: '#0f172a',
       color: '#f8fafc',
-      icons: [{ url: `${issuer}/icon`, size: 64 }],
+      icons: [{ url: 'https://atproto.com/favicon.ico', size: 64 }],
     },
   };
 };
@@ -198,21 +197,6 @@ router.get('/icon', async (req, res) => {
   res.send(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="${label}"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#2563eb"/></linearGradient></defs><rect width="64" height="64" rx="18" fill="url(#g)"/><text x="32" y="39" text-anchor="middle" font-size="24" font-family="system-ui, sans-serif" fill="#ffffff">${label}</text></svg>`
   );
-});
-
-router.get('/accounts', async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  if (!validateWebIdentityRequest(req)) {
-    return res.status(400).json({ error: 'InvalidRequest', message: 'Missing Sec-Fetch-Dest: webidentity' });
-  }
-
-  if (!req.session) {
-    return res.status(401).json({ accounts: [] });
-  }
-
-  res.json({
-    accounts: [await buildFedCmAccount(req)],
-  });
 });
 
 router.post('/assertion', async (req, res) => {
