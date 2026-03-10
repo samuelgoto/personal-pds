@@ -188,28 +188,143 @@ router.get('/oauth/authorize', async (req, res) => {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Authorize Application</title>
       <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f6f8fa; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 100%; max-width: 440px; }
-        .header { display: flex; align-items: center; margin-bottom: 1.5rem; gap: 1rem; }
-        .logo { width: 48px; height: 48px; border-radius: 10px; background: #eee; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #999; flex-shrink: 0; overflow: hidden; }
-        .logo img { width: 100%; height: 100%; object-fit: cover; }
-        h1 { font-size: 1.25rem; margin: 0; color: #111; line-height: 1.2; }
-        p { color: #444; line-height: 1.5; font-size: 0.95rem; margin-top: 0.5rem; }
-        .client-id { font-family: monospace; color: #666; font-size: 0.8rem; word-break: break-all; }
-        .scope-list { background: #f9f9f9; padding: 1rem; border-radius: 8px; border: 1px solid #eee; margin: 1.5rem 0; }
-        .scope-list ul { margin: 0; padding-left: 1.2rem; }
-        .scope-list li { margin-bottom: 0.6rem; font-size: 0.85rem; color: #444; }
-        .input-group { margin-bottom: 1rem; }
-        input[type="password"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 1rem; }
-        button { width: 100%; padding: 12px; background: #0070f3; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-size: 1rem; }
-        button:hover { background: #0060df; }
-        .footer { text-align: center; margin-top: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; }
-        .link { color: #666; text-decoration: none; font-size: 0.85rem; }
-        .link:hover { text-decoration: underline; }
+        :root {
+          color-scheme: light;
+          --bg: #f3f5f7;
+          --card: #ffffff;
+          --ink: #111827;
+          --muted: #4b5563;
+          --line: #d1d5db;
+          --accent: #0f172a;
+          --accent-soft: #e5e7eb;
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background: radial-gradient(circle at top, #dbeafe, #f8fafc 45%);
+          color: var(--ink);
+          min-height: 100vh;
+          margin: 0;
+          display: grid;
+          place-items: center;
+          padding: 24px;
+        }
+        .card {
+          width: min(520px, 100%);
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          padding: 28px;
+          box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+        }
+        .eyebrow {
+          margin: 0 0 6px;
+          color: var(--muted);
+          font-size: 0.95rem;
+        }
+        .header {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          margin-bottom: 1rem;
+        }
+        .logo {
+          width: 56px;
+          height: 56px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #0f172a, #2563eb);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          color: #fff;
+          flex-shrink: 0;
+          overflow: hidden;
+          border: 1px solid var(--line);
+        }
+        .logo img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+        h1 {
+          font-size: 1.4rem;
+          margin: 0;
+          color: var(--ink);
+          line-height: 1.2;
+        }
+        p {
+          color: var(--muted);
+          line-height: 1.5;
+          font-size: 0.95rem;
+          margin: 0 0 16px;
+        }
+        .client-id {
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+          color: var(--muted);
+          font-size: 0.8rem;
+          word-break: break-all;
+          margin-top: 6px;
+        }
+        .scope-list {
+          background: #f8fafc;
+          padding: 1rem 1.1rem;
+          border-radius: 12px;
+          border: 1px solid var(--line);
+          margin: 1.25rem 0 1.5rem;
+        }
+        .scope-list ul {
+          margin: 0;
+          padding-left: 1.2rem;
+        }
+        .scope-list li {
+          margin-bottom: 0.6rem;
+          font-size: 0.9rem;
+          color: var(--ink);
+        }
+        .scope-list li:last-child {
+          margin-bottom: 0;
+        }
+        .actions {
+          display: flex;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        button, .link-button {
+          appearance: none;
+          border: 0;
+          border-radius: 999px;
+          padding: 10px 16px;
+          font: inherit;
+          text-decoration: none;
+          cursor: pointer;
+        }
+        button {
+          background: var(--accent);
+          color: #fff;
+        }
+        .link-button {
+          background: var(--accent-soft);
+          color: var(--ink);
+        }
+        .meta-links {
+          margin-top: 18px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .meta-links a {
+          color: var(--muted);
+          text-decoration: none;
+          font-size: 0.9rem;
+        }
+        .meta-links a:hover {
+          text-decoration: underline;
+        }
       </style>
     </head>
     <body>
       <div class="card">
+        <p class="eyebrow">Authorize application access</p>
         <div class="header">
           <div class="logo">
             ${logoUri ? `<img src="${logoUri}" alt="">` : clientName[0].toUpperCase()}
@@ -220,7 +335,7 @@ router.get('/oauth/authorize', async (req, res) => {
           </div>
         </div>
         
-        <p>wants to access your <strong>${req.user.handle}</strong> account.</p>
+        <p>${clientName} wants to access your <strong>${req.user.handle}</strong> account.</p>
         
         <div class="scope-list">
           <ul>${getScopeDescription(scope || 'atproto')}</ul>
@@ -234,14 +349,16 @@ router.get('/oauth/authorize', async (req, res) => {
           <input type="hidden" name="code_challenge" value="${code_challenge}">
           <input type="hidden" name="code_challenge_method" value="${code_challenge_method || ''}">
           <input type="hidden" name="response_mode" value="${response_mode || ''}">
-          <button type="submit">Authorize</button>
+          <div class="actions">
+            <button type="submit">Authorize</button>
+            <a class="link-button" href="${redirect_uri}?error=access_denied">Cancel</a>
+          </div>
         </form>
         
-        <div class="footer">
-          ${metadata?.client_uri ? `<a href="${metadata.client_uri}" class="link" target="_blank">About the Application</a>` : ''}
-          ${metadata?.policy_uri ? `<a href="${metadata.policy_uri}" class="link" target="_blank">Privacy Policy</a>` : ''}
-          ${metadata?.tos_uri ? `<a href="${metadata.tos_uri}" class="link" target="_blank">Terms of Service</a>` : ''}
-          <a href="${redirect_uri}?error=access_denied" class="link">Cancel and return</a>
+        <div class="meta-links">
+          ${metadata?.client_uri ? `<a href="${metadata.client_uri}" target="_blank">About the Application</a>` : ''}
+          ${metadata?.policy_uri ? `<a href="${metadata.policy_uri}" target="_blank">Privacy Policy</a>` : ''}
+          ${metadata?.tos_uri ? `<a href="${metadata.tos_uri}" target="_blank">Terms of Service</a>` : ''}
         </div>
       </div>
     </body>

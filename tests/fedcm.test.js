@@ -72,7 +72,7 @@ describe('FedCM identity provider support', () => {
     expect(profile.data).toContain('rel="indieauth-metadata"');
   });
 
-  test('login page creates a PDS browser session and emits registration hooks', async () => {
+  test('login page creates a PDS browser session and emits login status hooks', async () => {
     const response = await axios.post(
       `${HOST}/login`,
       new URLSearchParams({ password: process.env.PASSWORD, return_to: '/dashboard' }).toString(),
@@ -86,11 +86,9 @@ describe('FedCM identity provider support', () => {
     expect(response.headers['set-cookie'][0]).toContain('SameSite=None');
     expect(response.headers['set-cookie'][0]).toContain('Secure');
     expect(response.headers['set-login']).toBe('logged-in');
-    expect(response.data).toContain('Register PDS');
     expect(response.data).toContain("navigator.login.setStatus('logged-in'");
     expect(response.data).toContain('window.__fedcmLoginStatusResult');
-    expect(response.data).toContain('IdentityProvider.register(configUrl) returned: ');
-    expect(response.data).toContain('window.__fedcmRegistrationResult');
+    expect(response.data).not.toContain('Register PDS');
   });
 
   test('accounts endpoint requires a browser session and returns pushed account metadata', async () => {

@@ -138,7 +138,7 @@ function renderLoginForm(req, { error = '', returnTo = '/', autoReturn = false }
 <body>
   <main>
     <h1>Sign in to ${escapeHtml(req.user.handle)}</h1>
-    <p>Creates a browser session for your PDS. If the browser supports it, this page also pushes IndieAuth account metadata with the Login Status API and prepares IdP registration for FedCM.</p>
+    <p>Creates a browser session for your PDS. If the browser supports it, this page also pushes IndieAuth account metadata with the Login Status API for FedCM.</p>
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ''}
     <form method="POST" action="/login">
       <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
@@ -155,7 +155,6 @@ function renderLoginForm(req, { error = '', returnTo = '/', autoReturn = false }
 }
 
 function renderLoggedInPage(req, { title, message, returnTo, autoReturn, accountPushPayload }) {
-  const configUrl = getConfigUrl(req);
   const escapedReturnTo = escapeHtml(returnTo || '/');
   const account = accountPushPayload.accounts[0];
   const displayName = escapeHtml(account?.name || req.user.handle);
@@ -279,10 +278,9 @@ function renderLoggedInPage(req, { title, message, returnTo, autoReturn, account
       </div>
     </div>
     <p>${escapeHtml(message)}</p>
-    <p>This page refreshes the browser sign-in state for <code>${escapeHtml(req.user.issuer)}</code> and, when supported, lets you register this PDS as an IndieAuth identity provider for FedCM.</p>
+    <p>This page refreshes the browser sign-in state for <code>${escapeHtml(req.user.issuer)}</code>. IdP registration for FedCM is available from the dashboard.</p>
     <div class="actions">
-      <button class="primary" id="register-fedcm" type="button" disabled>Register PDS</button>
-      <a class="secondary" href="${escapedReturnTo}">Continue</a>
+      <a class="primary" href="${escapedReturnTo}">Continue</a>
       <form method="POST" action="/logout">
         <input type="hidden" name="return_to" value="${escapedReturnTo}">
         <button class="secondary" type="submit">Log out</button>
@@ -292,14 +290,11 @@ function renderLoggedInPage(req, { title, message, returnTo, autoReturn, account
   </main>
   <script>
     const returnTo = ${JSON.stringify(returnTo || '/')};
-    const configUrl = ${JSON.stringify(configUrl)};
     const shouldAutoReturn = ${autoReturn ? 'true' : 'false'};
     const statusNode = document.getElementById('fedcm-status');
-    const registerButton = document.getElementById('register-fedcm');
     const accountPushPayload = ${JSON.stringify(accountPushPayload)};
     const statusMessages = [];
     window.__fedcmLoginStatusResult = null;
-    window.__fedcmRegistrationResult = null;
 
     function renderStatus() {
       statusNode.textContent = statusMessages.join('\\n');
@@ -311,7 +306,6 @@ function renderLoggedInPage(req, { title, message, returnTo, autoReturn, account
           await navigator.login.setStatus('logged-in', accountPushPayload);
           window.__fedcmLoginStatusResult = true;
           statusMessages.push('navigator.login.setStatus("logged-in", ...) succeeded.');
-          registerButton.disabled = false;
           if (shouldAutoReturn) {
             statusMessages.push('Returning to ' + returnTo + '...');
             renderStatus();
@@ -328,29 +322,6 @@ function renderLoggedInPage(req, { title, message, returnTo, autoReturn, account
       }
       renderStatus();
     }
-
-    registerButton.addEventListener('click', async () => {
-      registerButton.disabled = true;
-      if (window.IdentityProvider && typeof IdentityProvider.register === 'function') {
-        try {
-          const registrationResult = await IdentityProvider.register(configUrl);
-          window.__fedcmRegistrationResult = registrationResult;
-          statusMessages.push('IdentityProvider.register(configUrl) returned: ' + registrationResult);
-          if (registrationResult !== true) {
-            registerButton.disabled = false;
-          }
-        } catch (err) {
-          window.__fedcmRegistrationResult = false;
-          statusMessages.push('IdentityProvider.register failed: ' + err.message);
-          registerButton.disabled = false;
-        }
-      } else {
-        window.__fedcmRegistrationResult = false;
-        statusMessages.push('IdentityProvider.register is unavailable in this browser.');
-        registerButton.disabled = false;
-      }
-      renderStatus();
-    });
 
     void pushLoginStatus();
   </script>
