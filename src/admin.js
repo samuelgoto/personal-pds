@@ -312,6 +312,7 @@ router.get('/', requireBrowserSession, async (req, res) => {
         <p>Register this PDS as a FedCM IndieAuth identity provider in the current browser.</p>
         <div class="actions">
             <button id="register-fedcm" class="secondary" type="button">Register PDS</button>
+            <button id="unregister-fedcm" class="secondary" type="button">Unregister PDS</button>
         </div>
         <div id="fedcm-status">Idle</div>
     </div>
@@ -385,6 +386,23 @@ router.get('/', requireBrowserSession, async (req, res) => {
                 status.textContent = 'IdentityProvider.register(configUrl) returned: ' + result;
             } catch (err) {
                 status.textContent = 'IdentityProvider.register failed: ' + err.message;
+            }
+        });
+
+        document.getElementById('unregister-fedcm')?.addEventListener('click', async () => {
+            const status = document.getElementById('fedcm-status');
+            status.textContent = 'Unregistering...';
+
+            if (!window.IdentityProvider || typeof IdentityProvider.unregister !== 'function') {
+                status.textContent = 'IdentityProvider.unregister is unavailable in this browser.';
+                return;
+            }
+
+            try {
+                const result = await IdentityProvider.unregister(${JSON.stringify(configUrl)});
+                status.textContent = 'IdentityProvider.unregister(configUrl) returned: ' + result;
+            } catch (err) {
+                status.textContent = 'IdentityProvider.unregister failed: ' + err.message;
             }
         });
     </script>
