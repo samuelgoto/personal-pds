@@ -85,17 +85,19 @@ function getBlobUrl(req, blob) {
 
 async function buildFedCmAccount(req) {
   const profile = await loadProfileRecord(req.user);
-  const displayName = profile?.displayName || req.user.handle;
+  const username = req.user.handle.startsWith('@') ? req.user.handle : `@${req.user.handle}`;
+  const displayName = profile?.displayName || username;
   const approvedClients = await getApprovedClients(req.user.did);
   const meUrl = getMeUrl(req);
 
   return {
     id: meUrl,
     name: displayName,
+    username,
     given_name: displayName.split(' ')[0],
     email: meUrl,
     picture: getBlobUrl(req, profile?.avatar),
-    login_hints: [meUrl, req.user.handle, req.user.did].filter(Boolean),
+    login_hints: [meUrl, username, req.user.handle, req.user.did].filter(Boolean),
     approved_clients: approvedClients,
   };
 }
