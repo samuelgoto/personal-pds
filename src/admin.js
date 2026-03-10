@@ -50,36 +50,220 @@ router.get('/', requireBrowserSession, async (req, res) => {
 <head>
     <title>Personal PDS Dashboard</title>
     <style>
-        body { font-family: -apple-system, sans-serif; line-height: 1.6; max-width: 900px; margin: 40px auto; padding: 20px; background: #f4f4f9; color: #333; }
-        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        h1 { color: #007bff; display: flex; align-items: center; gap: 10px; }
-        h2 { border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
-        .stat { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 10px 0; }
-        .stat:last-child { border-bottom: none; }
-        .label { font-weight: bold; }
-        .value { font-family: monospace; color: #666; }
-        .status-ok { color: #28a745; font-weight: bold; }
-        .status-warn { color: #dc3545; font-weight: bold; }
-        .danger-zone { border: 2px solid #dc3545; padding: 20px; border-radius: 8px; margin-top: 40px; background: #fff5f5; }
-        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #0056b3; }
-        button.danger { background: #dc3545; }
-        button.secondary { background: #6c757d; }
-        .activity-item { padding: 8px; border-bottom: 1px solid #eee; font-size: 0.9em; }
-        .activity-item:last-child { border-bottom: none; }
-        .op-tag { padding: 2px 6px; border-radius: 4px; font-size: 0.8em; font-weight: bold; text-transform: uppercase; }
-        .op-create { background: #e3fcef; color: #28a745; }
-        .op-update { background: #fff3cd; color: #856404; }
-        .op-delete { background: #f8d7da; color: #721c24; }
-        .actions { display: flex; gap: 10px; margin-top: 10px; }
-        #action-result { margin-top: 10px; padding: 10px; border-radius: 4px; display: none; }
+        :root {
+            color-scheme: light;
+            --bg: #f3f5f7;
+            --card: #ffffff;
+            --ink: #111827;
+            --muted: #4b5563;
+            --line: #d1d5db;
+            --accent: #0f172a;
+            --accent-soft: #e5e7eb;
+            --ok: #166534;
+            --ok-bg: #dcfce7;
+            --warn: #b91c1c;
+            --warn-bg: #fee2e2;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top, #dbeafe, #f8fafc 45%);
+            color: var(--ink);
+            min-height: 100vh;
+            margin: 0;
+            padding: 24px;
+        }
+        main {
+            width: min(1080px, 100%);
+            margin: 0 auto;
+        }
+        .hero {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 28px;
+            box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+            margin-bottom: 20px;
+        }
+        .eyebrow {
+            margin: 0 0 6px;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+        h1 {
+            margin: 0 0 10px;
+            font-size: 2rem;
+            color: var(--ink);
+        }
+        .hero p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.5;
+        }
+        .hero-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+            margin-bottom: 20px;
+        }
+        h2 {
+            margin: 0 0 16px;
+            font-size: 1.15rem;
+        }
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            border-bottom: 1px solid var(--line);
+            padding: 10px 0;
+        }
+        .stat:last-child {
+            border-bottom: none;
+        }
+        .label {
+            font-weight: 600;
+        }
+        .value {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            color: var(--muted);
+            text-align: right;
+            word-break: break-word;
+        }
+        .status-ok {
+            color: var(--ok);
+            font-weight: 700;
+        }
+        .status-warn {
+            color: var(--warn);
+            font-weight: 700;
+        }
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        a, button {
+            appearance: none;
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 16px;
+            font: inherit;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        button, .button-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        button.secondary, .button-secondary {
+            background: var(--accent-soft);
+            color: var(--ink);
+        }
+        button.danger {
+            background: var(--warn);
+            color: #fff;
+        }
+        .activity-item {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--line);
+            font-size: 0.95rem;
+        }
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        .activity-time {
+            color: #6b7280;
+            font-size: 0.85rem;
+        }
+        .op-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-right: 8px;
+        }
+        .op-create {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .op-update {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        .op-delete {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        #action-result,
+        #fedcm-status {
+            margin-top: 14px;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #f8fafc;
+            color: var(--muted);
+            white-space: pre-wrap;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            display: none;
+        }
+        #fedcm-status {
+            display: block;
+        }
+        .danger-zone {
+            border: 1px solid #fecaca;
+            background: #fff5f5;
+        }
+        .danger-zone p {
+            color: var(--muted);
+        }
+        .danger-form {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+        input[type="password"] {
+            flex: 1 1 240px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font: inherit;
+            background: #fff;
+        }
+        @media (max-width: 800px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1><span>🌐</span> Personal PDS Dashboard</h1>
-    <p><a href="/logout">Log out</a></p>
-    
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+  <main>
+    <section class="hero">
+        <p class="eyebrow">Welcome to your PDS</p>
+        <h1>Personal PDS Dashboard</h1>
+        <p>Inspect repo health, browser identity state, and recent sequencer activity from the same session-backed control panel used by the rest of the PDS.</p>
+        <div class="hero-actions">
+            <a class="button-secondary" href="/logout">Log out</a>
+        </div>
+    </section>
+
+    <div class="grid">
         <div class="card">
             <h2>Identity</h2>
             <div class="stat"><span class="label">Handle</span><span class="value">${user.handle}</span></div>
@@ -105,7 +289,7 @@ router.get('/', requireBrowserSession, async (req, res) => {
         <div id="activity-feed">
             ${events.length === 0 ? '<p>No activity yet.</p>' : events.map(e => `
                 <div class="activity-item">
-                    <strong>Seq ${e.seq}</strong> <span style="color: #999;">${new Date(e.time).toLocaleTimeString()}</span><br/>
+                    <strong>Seq ${e.seq}</strong> <span class="activity-time">${new Date(e.time).toLocaleTimeString()}</span><br/>
                     ${e.ops.map(op => `
                         <span class="op-tag op-${op.action}">${op.action}</span> 
                         <span class="value">${op.path}</span>
@@ -129,23 +313,24 @@ router.get('/', requireBrowserSession, async (req, res) => {
         <div class="actions">
             <button id="register-fedcm" class="secondary" type="button">Register PDS</button>
         </div>
-        <div id="fedcm-status" style="margin-top: 10px; white-space: pre-wrap; font-family: monospace; color: #666;">Idle</div>
+        <div id="fedcm-status">Idle</div>
     </div>
 
-    <div class="danger-zone">
+    <div class="card danger-zone">
         <h2>Danger Zone</h2>
         <p>Wiping the PDS will delete all posts, follows, likes, and profile data. This cannot be undone.</p>
-        <form action="/debug/reset" method="POST" onsubmit="return confirm('PERMANENTLY DELETE ALL DATA? This is your last warning.')">
-            <input type="password" name="password" placeholder="PDS Password" required style="padding: 10px; margin-right: 10px; border: 1px solid #ccc; border-radius: 4px;">
+        <form class="danger-form" action="/debug/reset" method="POST" onsubmit="return confirm('PERMANENTLY DELETE ALL DATA? This is your last warning.')">
+            <input type="password" name="password" placeholder="PDS Password" required>
             <button type="submit" class="danger">Wipe PDS Data</button>
         </form>
     </div>
+  </main>
 
     <script>
         async function runAction(url, method = 'GET') {
             const resDiv = document.getElementById('action-result');
             resDiv.style.display = 'block';
-            resDiv.style.background = '#eee';
+            resDiv.style.background = '#f8fafc';
             resDiv.innerText = 'Running...';
             
             let headers = {};
@@ -169,7 +354,7 @@ router.get('/', requireBrowserSession, async (req, res) => {
                     if (!loginRes.ok) throw new Error(loginData.message || 'Login failed');
                     headers['Authorization'] = 'Bearer ' + loginData.accessJwt;
                 } catch (e) {
-                    resDiv.style.background = '#f8d7da';
+                    resDiv.style.background = '#fff5f5';
                     resDiv.innerText = 'Auth Error: ' + e.message;
                     return;
                 }
@@ -178,10 +363,10 @@ router.get('/', requireBrowserSession, async (req, res) => {
             try {
                 const res = await fetch(url, { method, headers, body });
                 const data = await res.json();
-                resDiv.style.background = res.ok ? '#e3fcef' : '#f8d7da';
+                resDiv.style.background = res.ok ? '#f0fdf4' : '#fff5f5';
                 resDiv.innerText = JSON.stringify(data, null, 2);
             } catch (e) {
-                resDiv.style.background = '#f8d7da';
+                resDiv.style.background = '#fff5f5';
                 resDiv.innerText = 'Error: ' + e.message;
             }
         }
