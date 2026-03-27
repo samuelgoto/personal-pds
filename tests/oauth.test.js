@@ -541,6 +541,38 @@ describe('ATProto OAuth Implementation Tests', () => {
         // Error should be invalid_grant, NOT DPoP verification failed (which would be 401/400 with message)
         expect(res.data.error).toBe('invalid_grant');
     });
+
+    test('invalid DPoP proof returns OAuth JSON instead of bubbling to InternalServerError', async () => {
+        const { generateKeyPairSync } = await import('crypto');
+        const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+          modulusLength: 2048,
+        });
+        const dpopJwk = publicKey.export({ format: 'jwk' });
+
+        const payload = {
+            iat: Math.floor(Date.now() / 1000),
+            jti: 'bad-htu-test',
+            htu: `${HOST}/oauth/not-the-token-endpoint`,
+            htm: 'POST'
+        };
+        const header = { typ: 'dpop+jwt', alg: 'RS256', jwk: dpopJwk };
+        const dpop = jwt.sign(payload, privateKey, { algorithm: 'RS256', header });
+
+        const res = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+            grant_type: 'authorization_code',
+            code: 'invalid',
+            client_id: 'any'
+        }).toString(), {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'DPoP': dpop
+            },
+            validateStatus: s => s === 400
+        });
+
+        expect(res.data.error).toBe('invalid_dpop_proof');
+        expect(res.data.message).toContain('DPoP htu mismatch');
+    });
   });
 
   describe('Advanced OAuth Features (JARM & private_key_jwt)', () => {

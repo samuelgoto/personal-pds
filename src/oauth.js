@@ -449,8 +449,9 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         
         // ATProto nuance: aud must be the issuer or the token endpoint
         const expectedAud = [issuer, `${issuer}/oauth/token` ];
-        if (!expectedAud.includes(decoded.payload.aud)) {
-            throw new Error(`Invalid audience in client_assertion: expected one of ${expectedAud}, got ${decoded.payload.aud}`);
+        const actualAud = Array.isArray(decoded.payload.aud) ? decoded.payload.aud : [decoded.payload.aud];
+        if (!actualAud.some((aud) => expectedAud.includes(aud))) {
+            throw new Error(`Invalid audience in client_assertion: expected one of ${expectedAud}, got ${actualAud}`);
         }
 
         const metadata = await validateClient(client_id, undefined); // No redirect_uri check yet
@@ -460,13 +461,17 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         }
 
         // Fetch JWKS and verify
-        let jwks;
-        if (clientKeyCache.has(metadata.jwks_uri)) {
+        let jwks = metadata.jwks;
+        if (!jwks && clientKeyCache.has(metadata.jwks_uri)) {
             jwks = clientKeyCache.get(metadata.jwks_uri);
-        } else {
+        } else if (!jwks && metadata.jwks_uri) {
             const jwksRes = await axios.get(metadata.jwks_uri);
             jwks = jwksRes.data;
             clientKeyCache.set(metadata.jwks_uri, jwks);
+        }
+
+        if (!jwks || !Array.isArray(jwks.keys)) {
+            throw new Error('Client JWKS not available');
         }
 
         const key = jwks.keys.find(k => k.kid === decoded.header.kid);
@@ -486,7 +491,13 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
       }
     }
 
-    const { jkt } = await validateDpop(req);
+    let jkt;
+    try {
+      ({ jkt } = await validateDpop(req));
+    } catch (err) {
+      console.error('[OAUTH_TOKEN] DPoP validation failed:', err.message);
+      return res.status(400).json({ error: 'invalid_dpop_proof', message: err.message });
+    }
 
     if (grant_type === 'authorization_code') {
       const result = await db.execute({
