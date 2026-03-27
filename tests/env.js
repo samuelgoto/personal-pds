@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { generateKeyPairSync } from 'crypto';
 
 // 1. Load the actual .env file if it exists (same as npm start)
 dotenv.config();
@@ -24,3 +25,14 @@ process.env.PORT = '0';
 // We use a memory database so tests are fast and don't overwrite your local dev DB
 process.env.TURSO_DATABASE_URL = 'file::memory:';
 process.env.NODE_ENV = 'test';
+
+if (!process.env.OAUTH_ES256K_PRIVATE_KEY || !/^[a-f0-9]{64}$/i.test(process.env.OAUTH_ES256K_PRIVATE_KEY)) {
+  process.env.OAUTH_ES256K_PRIVATE_KEY = '1111111111111111111111111111111111111111111111111111111111111111';
+}
+
+if (!process.env.OAUTH_RS256_PRIVATE_KEY || process.env.OAUTH_RS256_PRIVATE_KEY.includes('...')) {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, publicExponent: 0x10001 });
+  process.env.OAUTH_RS256_PRIVATE_KEY = privateKey
+    .export({ format: 'pem', type: 'pkcs8' })
+    .toString();
+}

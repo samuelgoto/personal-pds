@@ -2,12 +2,19 @@ import express from 'express';
 import { db } from './db.js';
 import { createToken, validateDpop, verifyToken } from './auth.js';
 import { createHash, randomBytes, createECDH, createPublicKey } from 'crypto';
-import * as crypto from '@atproto/crypto';
 import axios from 'axios';
 import { getDidDoc, verifyPassword, isSafeUrl } from './util.js';
 import { rateLimit } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { createSession, getLoginUrl, setSessionCookie } from './session.js';
+import {
+  getOauthEs256kKeypair,
+  getOauthEs256kPrivateKeyHex,
+  getOauthEs256kPublicJwk,
+  getOptionalRs256PrivateKey,
+  getOptionalRs256PublicJwk,
+  getSupportedAuthorizationSigningAlgs,
+} from './oauth-keys.js';
 
 const router = express.Router();
 
@@ -22,11 +29,45 @@ const oauthLimiter = rateLimit({
 
 const clientKeyCache = new Map();
 
+async function signAuthorizationResponseJwt(payload, alg, user) {
+  if (alg === 'ES256K') {
+    const header = { typ: 'JWT', alg: 'ES256K' };
+    const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const data = Buffer.from(`${headerB64}.${payloadB64}`);
+
+    const keypair = await getOauthEs256kKeypair();
+    const sig = await keypair.sign(data);
+    const sigB64 = Buffer.from(sig).toString('base64url');
+    return `${headerB64}.${payloadB64}.${sigB64}`;
+  }
+
+  if (alg === 'RS256') {
+    const privateKey = getOptionalRs256PrivateKey();
+    const jwk = getOptionalRs256PublicJwk();
+    if (!privateKey || !jwk) {
+      throw new Error('RS256 authorization signing requested but OAUTH_RS256_PRIVATE_KEY is not configured');
+    }
+
+    return jwt.sign(payload, privateKey, {
+      algorithm: 'RS256',
+      noTimestamp: true,
+      header: {
+        typ: 'JWT',
+        alg: 'RS256',
+        kid: jwk.kid,
+      },
+    });
+  }
+
+  throw new Error(`Unsupported authorization response signing algorithm: ${alg}`);
+}
+
 export async function createAccessToken(did, handle, jkt, issuer, client_id, scope) {
   // ATProto OAuth nuance: The resource server identifier is its did:web
   const pdsHost = issuer.replace(/^https?:\/\//, '');
   const pdsDidWeb = `did:web:${pdsHost}`;
-  const privKeyHex = process.env.PRIVATE_KEY;
+  const privKeyHex = getOauthEs256kPrivateKeyHex();
   
   const payload = {
     iss: issuer,
@@ -44,15 +85,16 @@ export async function createAccessToken(did, handle, jkt, issuer, client_id, sco
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const data = Buffer.from(`${headerB64}.${payloadB64}`);
 
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+  const keypair = await getOauthEs256kKeypair();
   const sig = await keypair.sign(data);
   const sigB64 = Buffer.from(sig).toString('base64url');
 
   return `${headerB64}.${payloadB64}.${sigB64}`;
 }
 
-export async function createIdToken(did, handle, client_id, issuer, privKey) {
-  if (!privKey) throw new Error('No PDS private key');
+export async function createIdToken(did, handle, client_id, issuer) {
+  const privKeyHex = getOauthEs256kPrivateKeyHex();
+  if (!privKeyHex) throw new Error('No OAuth ES256K private key');
   if (!client_id) throw new Error('client_id is required for id_token');
 
   const payload = {
@@ -70,7 +112,7 @@ export async function createIdToken(did, handle, client_id, issuer, privKey) {
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const data = Buffer.from(`${headerB64}.${payloadB64}`);
 
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(privKey));
+  const keypair = await getOauthEs256kKeypair();
   const sig = await keypair.sign(data);
   const sigB64 = Buffer.from(sig).toString('base64url');
 
@@ -139,6 +181,10 @@ router.get('/oauth/authorize', async (req, res) => {
   const clientName = metadata?.client_name || client_id;
   const logoUri = metadata?.logo_uri || '';
   const isBrowserLoggedIn = Boolean(req.session);
+
+  if (metadata?.authorization_signed_response_alg && !getSupportedAuthorizationSigningAlgs().includes(metadata.authorization_signed_response_alg)) {
+    return res.status(400).send(`Unsupported authorization_signed_response_alg: ${metadata.authorization_signed_response_alg}`);
+  }
 
   if (!isBrowserLoggedIn) {
     const returnTo = `${req.path}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
@@ -385,6 +431,13 @@ router.post('/oauth/authorize', oauthLimiter, async (req, res) => {
   const metadata = await validateClient(client_id, redirect_uri);
   console.log(`[OAUTH] Metadata for ${client_id}:`, metadata);
 
+  if (metadata?.authorization_signed_response_alg && !getSupportedAuthorizationSigningAlgs().includes(metadata.authorization_signed_response_alg)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      message: `Unsupported authorization_signed_response_alg: ${metadata.authorization_signed_response_alg}`
+    });
+  }
+
   const code = randomBytes(16).toString('hex');
   const expires_at = Math.floor(Date.now() / 1000) + 600;
 
@@ -405,16 +458,7 @@ router.post('/oauth/authorize', oauthLimiter, async (req, res) => {
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 600,
     };
-
-    const header = { typ: 'JWT', alg: 'ES256K' };
-    const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
-    const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    const data = Buffer.from(`${headerB64}.${payloadB64}`);
-
-    const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-    const sig = await keypair.sign(data);
-    const sigB64 = Buffer.from(sig).toString('base64url');
-    const responseJwt = `${headerB64}.${payloadB64}.${sigB64}`;
+    const responseJwt = await signAuthorizationResponseJwt(payload, metadata.authorization_signed_response_alg, user);
 
     url.searchParams.set('response', responseJwt);
   } else {
@@ -608,7 +652,7 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
       };
 
       if (row.scope.includes('openid')) {
-        response.id_token = await createIdToken(row.did, user.handle, client_id, issuer, user.signing_key);
+        response.id_token = await createIdToken(row.did, user.handle, client_id, issuer);
       }
 
       console.log('[OAUTH_TOKEN] Authorization code exchanged', {
@@ -654,7 +698,7 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
       };
 
       if (row.scope.includes('openid')) {
-        response.id_token = await createIdToken(row.did, user.handle, client_id, issuer, user.signing_key);
+        response.id_token = await createIdToken(row.did, user.handle, client_id, issuer);
       }
 
       console.log('[OAUTH_TOKEN] Refresh token exchanged', {
@@ -675,6 +719,7 @@ router.get('/.well-known/oauth-authorization-server', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
   const issuer = req.user.issuer;
+  const authorizationSigningAlgs = getSupportedAuthorizationSigningAlgs();
   
   res.json({
     issuer,
@@ -690,7 +735,7 @@ router.get('/.well-known/oauth-authorization-server', async (req, res) => {
     token_endpoint_auth_methods_supported: ['none', 'client_id_metadata_document', 'private_key_jwt'],
     token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
     dpop_signing_alg_values_supported: ['RS256', 'ES256', 'ES256K'],
-    authorization_signing_alg_values_supported: ['ES256K'],
+    authorization_signing_alg_values_supported: authorizationSigningAlgs,
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
     client_id_metadata_document_supported: true,
@@ -733,26 +778,15 @@ router.get('/.well-known/jwks.json', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
   
-  const user = req.user;
-  const ecdh = createECDH('secp256k1');
-  ecdh.setPrivateKey(user.signing_key);
-  const uncompressed = ecdh.getPublicKey();
-  const x = uncompressed.slice(1, 33).toString('base64url');
-  const y = uncompressed.slice(33, 65).toString('base64url');
+  const keys = [await getOauthEs256kPublicJwk()];
 
-  const keypair = await crypto.Secp256k1Keypair.import(new Uint8Array(user.signing_key));
-  const did = keypair.did();
+  const rs256Jwk = getOptionalRs256PublicJwk();
+  if (rs256Jwk) {
+    keys.push(rs256Jwk);
+  }
 
   res.json({
-    keys: [{
-      kty: 'EC',
-      crv: 'secp256k1',
-      x,
-      y,
-      use: 'sig',
-      alg: 'ES256K',
-      kid: did
-    }]
+    keys
   });
 });
 

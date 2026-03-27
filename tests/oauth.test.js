@@ -154,9 +154,13 @@ describe('ATProto OAuth Implementation Tests', () => {
     test('jwks.json returns valid ES256K public key', async () => {
       const res = await axios.get(`${HOST}/.well-known/jwks.json`);
       expect(res.status).toBe(200);
-      expect(res.data.keys).toHaveLength(1);
-      expect(res.data.keys[0].kty).toBe('EC');
-      expect(res.data.keys[0].crv).toBe('secp256k1');
+      const es256kKey = res.data.keys.find((key) => key.alg === 'ES256K');
+      const rs256Key = res.data.keys.find((key) => key.alg === 'RS256');
+      expect(es256kKey).toBeDefined();
+      expect(es256kKey.kty).toBe('EC');
+      expect(es256kKey.crv).toBe('secp256k1');
+      expect(rs256Key).toBeDefined();
+      expect(rs256Key.kty).toBe('RSA');
     });
   });
 
@@ -728,10 +732,96 @@ describe('ATProto OAuth Implementation Tests', () => {
         expect(tokenRes.data.token_type).toBe('DPoP');
         expect(tokenRes.data.did).toBe(userDid);
     });
+
+    test('OAuth ES256K signing key can be separate from the repo signing key', async () => {
+        const previousOauthKey = process.env.OAUTH_ES256K_PRIVATE_KEY;
+        const oauthKeypair = await cryptoAtp.Secp256k1Keypair.create({ exportable: true });
+        process.env.OAUTH_ES256K_PRIVATE_KEY = Buffer.from(await oauthKeypair.export()).toString('hex');
+
+        try {
+          const jwksRes = await axios.get(`${HOST}/.well-known/jwks.json`);
+          const oauthJwk = jwksRes.data.keys.find((key) => key.alg === 'ES256K');
+          expect(oauthJwk).toBeDefined();
+          expect(oauthJwk.kid).toBe(oauthKeypair.did());
+
+          const client_id = 'https://client.example.com/meta.json';
+          const redirect_uri = 'https://client.example.com/callback';
+          const codeVerifier = randomBytes(32).toString('base64url');
+          const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+
+          const authRes = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+            client_id,
+            redirect_uri,
+            scope: 'atproto',
+            state: 'oauth-es256k-separate-state',
+            code_challenge: codeChallenge,
+            code_challenge_method: 'S256',
+            password
+          }).toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            maxRedirects: 0,
+            validateStatus: s => s === 302
+          });
+
+          const code = new URL(authRes.headers.location).searchParams.get('code');
+
+          const { generateKeyPairSync } = await import('crypto');
+          const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+          const dpopJwk = publicKey.export({ format: 'jwk' });
+          const dpopHeader = jwt.sign({
+            htu: `${HOST}/oauth/token`,
+            htm: 'POST',
+            iat: Math.floor(Date.now() / 1000),
+            jti: randomBytes(12).toString('hex'),
+          }, privateKey, {
+            algorithm: 'RS256',
+            header: { typ: 'dpop+jwt', alg: 'RS256', jwk: dpopJwk }
+          });
+
+          const tokenRes = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri,
+            client_id,
+            code_verifier: codeVerifier
+          }).toString(), {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'DPoP': dpopHeader
+            }
+          });
+
+          const protectedDpop = jwt.sign({
+            htu: `${HOST}/xrpc/com.atproto.server.getSession`,
+            htm: 'GET',
+            iat: Math.floor(Date.now() / 1000),
+            jti: randomBytes(12).toString('hex'),
+          }, privateKey, {
+            algorithm: 'RS256',
+            header: { typ: 'dpop+jwt', alg: 'RS256', jwk: dpopJwk }
+          });
+
+          const sessionRes = await axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {
+            headers: {
+              'Authorization': `DPoP ${tokenRes.data.access_token}`,
+              'DPoP': protectedDpop
+            }
+          });
+
+          expect(sessionRes.status).toBe(200);
+          expect(sessionRes.data.did).toBe(userDid);
+        } finally {
+          if (previousOauthKey === undefined) {
+            delete process.env.OAUTH_ES256K_PRIVATE_KEY;
+          } else {
+            process.env.OAUTH_ES256K_PRIVATE_KEY = previousOauthKey;
+          }
+        }
+    });
   });
 
   describe('Advanced OAuth Features (JARM & private_key_jwt)', () => {
-    test('JARM: should return a signed JWT response when requested by client', async () => {
+    test('JARM: should return a signed JWT response when requested with a supported algorithm', async () => {
       const client_id = 'https://jarm-client.com/meta.json';
       const redirect_uri = 'https://jarm-client.com/callback';
       
@@ -741,7 +831,7 @@ describe('ATProto OAuth Implementation Tests', () => {
         .reply(200, {
           client_id,
           redirect_uris: [redirect_uri],
-          authorization_signed_response_alg: 'RS256'
+          authorization_signed_response_alg: 'ES256K'
         });
 
       const res = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
@@ -754,15 +844,100 @@ describe('ATProto OAuth Implementation Tests', () => {
       }).toString(), { maxRedirects: 0, validateStatus: s => s === 302 });
 
       const redirectUrl = new URL(res.headers.location);
-      // It might be in fragment if response_mode was fragment, but here it's default (query)
       const responseJwt = redirectUrl.searchParams.get('response') || new URLSearchParams(redirectUrl.hash.slice(1)).get('response');
       expect(responseJwt).not.toBeNull();
 
-      const decoded = jwt.decode(responseJwt);
-      expect(decoded.iss).toBe(HOST);
-      expect(decoded.aud).toBe(client_id);
-      expect(decoded.state).toBe('jarm-test');
-      expect(decoded.code).toBeDefined();
+      const decoded = jwt.decode(responseJwt, { complete: true });
+      expect(decoded.header.alg).toBe('ES256K');
+      expect(decoded.payload.iss).toBe(HOST);
+      expect(decoded.payload.aud).toBe(client_id);
+      expect(decoded.payload.state).toBe('jarm-test');
+      expect(decoded.payload.code).toBeDefined();
+    });
+
+    test('JARM: should support RS256 when an RSA signing key is configured', async () => {
+      const { generateKeyPairSync, createPublicKey } = await import('crypto');
+      const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const previousKey = process.env.OAUTH_RS256_PRIVATE_KEY;
+      process.env.OAUTH_RS256_PRIVATE_KEY = privateKey.export({ format: 'pem', type: 'pkcs8' }).toString();
+
+      try {
+        const client_id = 'https://jarm-rs256-supported-client.com/meta.json';
+        const redirect_uri = 'https://jarm-rs256-supported-client.com/callback';
+
+        nock('https://jarm-rs256-supported-client.com')
+          .persist()
+          .get('/meta.json')
+          .reply(200, {
+            client_id,
+            redirect_uris: [redirect_uri],
+            authorization_signed_response_alg: 'RS256'
+          });
+
+        const metaRes = await axios.get(`${HOST}/.well-known/oauth-authorization-server`);
+        expect(metaRes.data.authorization_signing_alg_values_supported).toContain('RS256');
+
+        const jwksRes = await axios.get(`${HOST}/.well-known/jwks.json`);
+        const rsaJwk = jwksRes.data.keys.find((key) => key.alg === 'RS256');
+        expect(rsaJwk).toBeDefined();
+
+        const res = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+          client_id,
+          redirect_uri,
+          password,
+          state: 'jarm-rs256-supported-test',
+          code_challenge: 'any',
+          code_challenge_method: 'S256'
+        }).toString(), { maxRedirects: 0, validateStatus: s => s === 302 });
+
+        const redirectUrl = new URL(res.headers.location);
+        const responseJwt = redirectUrl.searchParams.get('response');
+        expect(responseJwt).not.toBeNull();
+
+        const decoded = jwt.decode(responseJwt, { complete: true });
+        expect(decoded.header.alg).toBe('RS256');
+        expect(decoded.header.kid).toBe(rsaJwk.kid);
+        expect(decoded.payload.aud).toBe(client_id);
+        expect(decoded.payload.state).toBe('jarm-rs256-supported-test');
+
+        const verified = jwt.verify(responseJwt, createPublicKey({ key: rsaJwk, format: 'jwk' }), { algorithms: ['RS256'] });
+        expect(verified.aud).toBe(client_id);
+      } finally {
+        if (previousKey === undefined) {
+          delete process.env.OAUTH_RS256_PRIVATE_KEY;
+        } else {
+          process.env.OAUTH_RS256_PRIVATE_KEY = previousKey;
+        }
+      }
+    });
+
+    test('JARM: should reject unsupported authorization response signing algorithms', async () => {
+      const client_id = 'https://jarm-unsupported-client.com/meta.json';
+      const redirect_uri = 'https://jarm-unsupported-client.com/callback';
+
+      nock('https://jarm-unsupported-client.com')
+        .persist()
+        .get('/meta.json')
+        .reply(200, {
+          client_id,
+          redirect_uris: [redirect_uri],
+          authorization_signed_response_alg: 'PS256'
+        });
+
+      const res = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+        client_id,
+        redirect_uri,
+        password,
+        state: 'jarm-rs256-test',
+        code_challenge: 'any',
+        code_challenge_method: 'S256'
+      }).toString(), {
+        maxRedirects: 0,
+        validateStatus: s => s === 400
+      });
+
+      expect(res.data.error).toBe('invalid_request');
+      expect(res.data.message).toContain('Unsupported authorization_signed_response_alg');
     });
 
     test('private_key_jwt: should authenticate client using signed assertion', async () => {

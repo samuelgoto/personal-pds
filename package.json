@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "gen-key": "node scripts/gen-key.js",
+    "gen-oauth-keys": "node scripts/gen-oauth-keys.js",
     "setup-profile": "node scripts/setup-profile.js",
     "reset-pds": "node scripts/reset-pds.js",
     "test": "NODE_OPTIONS='--experimental-vm-modules --no-warnings' jest && playwright test tests/e2e/fedcm.spec.js",

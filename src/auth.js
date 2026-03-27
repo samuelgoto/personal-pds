@@ -2,9 +2,10 @@ import jwt from 'jsonwebtoken';
 import { createHash, createPublicKey, createPrivateKey, createECDH, verify as cryptoVerify, randomBytes } from 'crypto';
 import * as cryptoAtp from '@atproto/crypto';
 import { secp256k1 } from '@noble/curves/secp256k1';
+import { getOauthEs256kKeypair, getOauthEs256kPrivateKeyHex } from './oauth-keys.js';
 
 export async function createToken(did, handle) {
-  const privKeyHex = process.env.PRIVATE_KEY;
+  const privKeyHex = getOauthEs256kPrivateKeyHex();
   if (!privKeyHex) throw new Error('No PDS private key');
   
   const payload = { 
@@ -20,7 +21,7 @@ export async function createToken(did, handle) {
   const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const data = Buffer.from(`${headerB64}.${payloadB64}`);
 
-  const keypair = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
+  const keypair = await getOauthEs256kKeypair();
   const sig = await keypair.sign(data);
   const sigB64 = Buffer.from(sig).toString('base64url');
 
@@ -70,13 +71,25 @@ export async function verifyToken(token) {
     const data = Buffer.from(`${headerB64}.${payloadB64}`);
     const signature = Buffer.from(sigB64, 'base64url');
 
-    const privKeyHex = process.env.PRIVATE_KEY;
-    if (!privKeyHex) return null;
+    const candidateKeys = [];
+    const oauthKeyHex = getOauthEs256kPrivateKeyHex();
+    if (oauthKeyHex) {
+      candidateKeys.push(oauthKeyHex);
+    }
+    const repoKeyHex = process.env.PRIVATE_KEY;
+    if (repoKeyHex && repoKeyHex !== oauthKeyHex) {
+      candidateKeys.push(repoKeyHex);
+    }
 
-    const kp = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(privKeyHex, 'hex')));
-    const isVerified = await cryptoAtp.verifySignature(kp.did(), data, signature);
-    
-    return isVerified ? payload : null;
+    for (const keyHex of candidateKeys) {
+      const kp = await cryptoAtp.Secp256k1Keypair.import(new Uint8Array(Buffer.from(keyHex, 'hex')));
+      const isVerified = await cryptoAtp.verifySignature(kp.did(), data, signature);
+      if (isVerified) {
+        return payload;
+      }
+    }
+
+    return null;
   } catch (err) {
     return null;
   }

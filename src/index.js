@@ -20,6 +20,8 @@ async function pingRelay(hostname) {
 if (!process.env.HANDLE) throw new Error('Missing HANDLE environment variable');
 if (!process.env.PDS_DID) throw new Error('Missing PDS_DID environment variable');
 if (!process.env.PRIVATE_KEY) throw new Error('Missing PRIVATE_KEY environment variable');
+if (!process.env.OAUTH_ES256K_PRIVATE_KEY) throw new Error('Missing OAUTH_ES256K_PRIVATE_KEY environment variable');
+if (!process.env.OAUTH_RS256_PRIVATE_KEY) throw new Error('Missing OAUTH_RS256_PRIVATE_KEY environment variable');
 if (!process.env.PASSWORD) throw new Error('Missing PASSWORD environment variable');
 if (!process.env.TURSO_DATABASE_URL) throw new Error('Missing TURSO_DATABASE_URL environment variable');
 
