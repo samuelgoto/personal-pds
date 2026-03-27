@@ -113,11 +113,11 @@ export async function validateDpop(req, access_token = null) {
   try {
     if (jwk.kty === 'EC' && jwk.crv === 'secp256k1') {
       const publicKeyBytes = new Uint8Array(Buffer.concat([Buffer.from([0x04]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]));
-      const keypair = await cryptoAtp.Secp256k1Keypair.import(publicKeyBytes);
       const [headerB64, payloadB64, sigB64] = dpop.split('.');
       const data = Buffer.from(`${headerB64}.${payloadB64}`);
       const signature = Buffer.from(sigB64, 'base64url');
-      const verified = await cryptoAtp.verifySignature(keypair.did(), data, signature);
+      const didKey = cryptoAtp.formatDidKey(cryptoAtp.SECP256K1_JWT_ALG, publicKeyBytes);
+      const verified = await cryptoAtp.verifySignature(didKey, data, signature, { jwtAlg: cryptoAtp.SECP256K1_JWT_ALG });
       if (!verified) throw new Error('DPoP signature verification failed');
     } else {
       const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
