@@ -654,7 +654,80 @@ describe('ATProto OAuth Implementation Tests', () => {
         expect(tokenRes.data.access_token).toBeDefined();
         expect(tokenRes.data.token_type).toBe('DPoP');
         expect(tokenRes.data.did).toBe(userDid);
-      });
+    });
+
+    test('ES256K DPoP proof accepts a valid high-S signature', async () => {
+        const client_id = 'https://client.example.com/meta.json';
+        const redirect_uri = 'https://client.example.com/callback';
+        const codeVerifier = randomBytes(32).toString('base64url');
+        const codeChallenge = createHash('sha256').update(codeVerifier).digest('base64url');
+
+        const authRes = await axios.post(`${HOST}/oauth/authorize`, new URLSearchParams({
+          client_id,
+          redirect_uri,
+          scope: 'atproto',
+          state: 'es256k-high-s-state',
+          code_challenge: codeChallenge,
+          code_challenge_method: 'S256',
+          password
+        }).toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          maxRedirects: 0,
+          validateStatus: s => s === 302
+        });
+
+        const code = new URL(authRes.headers.location).searchParams.get('code');
+
+        const keypair = await cryptoAtp.Secp256k1Keypair.create({ exportable: true });
+        const publicKeyBytes = keypair.publicKeyBytes();
+        const { secp256k1 } = await import('@noble/curves/secp256k1');
+        const uncompressed = secp256k1.ProjectivePoint.fromHex(publicKeyBytes).toRawBytes(false);
+        const dpopJwk = {
+          kty: 'EC',
+          crv: 'secp256k1',
+          x: Buffer.from(uncompressed.slice(1, 33)).toString('base64url'),
+          y: Buffer.from(uncompressed.slice(33, 65)).toString('base64url'),
+        };
+
+        const payload = {
+          iat: Math.floor(Date.now() / 1000),
+          jti: randomBytes(12).toString('hex'),
+          htu: `${HOST}/oauth/token`,
+          htm: 'POST',
+        };
+        const header = { typ: 'dpop+jwt', alg: 'ES256K', jwk: dpopJwk };
+        const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
+        const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
+        const data = Buffer.from(`${headerB64}.${payloadB64}`);
+        const signature = await keypair.sign(data);
+
+        const r = signature.slice(0, 32);
+        const s = BigInt(`0x${Buffer.from(signature.slice(32)).toString('hex')}`);
+        const highS = secp256k1.CURVE.n - s;
+        const highSSignature = Buffer.concat([
+          Buffer.from(r),
+          Buffer.from(highS.toString(16).padStart(64, '0'), 'hex'),
+        ]);
+        const dpop = `${headerB64}.${payloadB64}.${highSSignature.toString('base64url')}`;
+
+        const tokenRes = await axios.post(`${HOST}/oauth/token`, new URLSearchParams({
+          grant_type: 'authorization_code',
+          code,
+          redirect_uri,
+          client_id,
+          code_verifier: codeVerifier
+        }).toString(), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'DPoP': dpop
+          }
+        });
+
+        expect(tokenRes.status).toBe(200);
+        expect(tokenRes.data.access_token).toBeDefined();
+        expect(tokenRes.data.token_type).toBe('DPoP');
+        expect(tokenRes.data.did).toBe(userDid);
+    });
   });
 
   describe('Advanced OAuth Features (JARM & private_key_jwt)', () => {

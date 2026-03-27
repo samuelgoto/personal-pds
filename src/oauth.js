@@ -438,6 +438,20 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
     let { grant_type, code, client_id, redirect_uri, refresh_token, code_verifier, client_assertion, client_assertion_type } = req.body;
     const user = req.user;
     const issuer = user.issuer;
+    const requestId = req.get('x-request-id') || 'no-request-id';
+
+    console.log('[OAUTH_TOKEN] Request received', {
+      requestId,
+      grant_type,
+      client_id: client_id || null,
+      redirect_uri: redirect_uri || null,
+      has_code: Boolean(code),
+      has_refresh_token: Boolean(refresh_token),
+      has_code_verifier: Boolean(code_verifier),
+      has_dpop: Boolean(req.headers.dpop),
+      has_client_assertion: Boolean(client_assertion),
+      client_assertion_type: client_assertion_type || null,
+    });
 
     // 1. Support private_key_jwt authentication
     if (client_assertion_type === 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer' && client_assertion) {
@@ -446,6 +460,14 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         if (!decoded) throw new Error('Invalid client_assertion');
         
         client_id = decoded.payload.iss; // client_id MUST be the issuer
+        console.log('[OAUTH_TOKEN] Client assertion decoded', {
+          requestId,
+          client_id,
+          alg: decoded.header?.alg || null,
+          kid: decoded.header?.kid || null,
+          aud: decoded.payload?.aud || null,
+          sub: decoded.payload?.sub || null,
+        });
         
         // ATProto nuance: aud must be the issuer or the token endpoint
         const expectedAud = [issuer, `${issuer}/oauth/token` ];
@@ -474,14 +496,31 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
             throw new Error('Client JWKS not available');
         }
 
+        console.log('[OAUTH_TOKEN] Client assertion JWKS loaded', {
+          requestId,
+          client_id,
+          jwks_uri: metadata.jwks_uri || null,
+          jwk_count: jwks.keys.length,
+        });
+
         const key = jwks.keys.find(k => k.kid === decoded.header.kid);
         if (!key) throw new Error('Matching key not found in JWKS');
+
+        console.log('[OAUTH_TOKEN] Client assertion key selected', {
+          requestId,
+          client_id,
+          kid: key.kid || null,
+          kty: key.kty,
+          crv: key.crv || null,
+          alg: key.alg || null,
+        });
 
         // Note: Minimal implementation. In production, use jwks-rsa or similar.
         // For ES256, we can use the multikey format if it's already there
         if (key.kty === 'EC' && key.crv === 'P-256') {
              // Basic validation that it's signed correctly
              jwt.verify(client_assertion, createPublicKey({ key, format: 'jwk' }), { algorithms: ['ES256'] });
+             console.log('[OAUTH_TOKEN] Client assertion verified', { requestId, client_id, alg: 'ES256' });
         } else {
              throw new Error('Unsupported key type in JWKS');
         }
@@ -510,6 +549,14 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
       }
 
       const row = result.rows[0];
+      console.log('[OAUTH_TOKEN] Authorization code loaded', {
+        requestId,
+        client_id,
+        did: row.did,
+        scope: row.scope,
+        format: row.format || 'atproto',
+        pkce_bound: Boolean(row.dpop_jwk),
+      });
 
       if (row.dpop_jwk) {
         if (!code_verifier) return res.status(400).json({ error: 'invalid_request', message: 'Missing code_verifier' });
@@ -517,6 +564,7 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         if (hash !== row.dpop_jwk) {
             return res.status(400).json({ error: 'invalid_grant', message: 'PKCE verification failed' });
         }
+        console.log('[OAUTH_TOKEN] PKCE verification passed', { requestId, client_id });
       }
 
       if (row.format === 'indieauth') {
@@ -563,6 +611,14 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         response.id_token = await createIdToken(row.did, user.handle, client_id, issuer, user.signing_key);
       }
 
+      console.log('[OAUTH_TOKEN] Authorization code exchanged', {
+        requestId,
+        client_id,
+        did: row.did,
+        token_type: response.token_type,
+        scope: response.scope,
+        has_id_token: Boolean(response.id_token),
+      });
       res.json(response);
     } else if (grant_type === 'refresh_token') {
        const result = await db.execute({
@@ -601,6 +657,14 @@ router.post('/oauth/token', oauthLimiter, async (req, res) => {
         response.id_token = await createIdToken(row.did, user.handle, client_id, issuer, user.signing_key);
       }
 
+      console.log('[OAUTH_TOKEN] Refresh token exchanged', {
+        requestId,
+        client_id,
+        did: row.did,
+        token_type: response.token_type,
+        scope: response.scope,
+        has_id_token: Boolean(response.id_token),
+      });
       res.json(response);
     } else {
       res.status(400).json({ error: 'unsupported_grant_type' });

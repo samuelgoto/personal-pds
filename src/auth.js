@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { createHash, createPublicKey, createPrivateKey, createECDH, verify as cryptoVerify, randomBytes } from 'crypto';
 import * as cryptoAtp from '@atproto/crypto';
+import { secp256k1 } from '@noble/curves/secp256k1';
 
 export async function createToken(did, handle) {
   const privKeyHex = process.env.PRIVATE_KEY;
@@ -101,6 +102,7 @@ export async function validateDpop(req, access_token = null) {
   const dpop = req.headers.dpop;
   if (!dpop) return { jkt: null, jwk: null };
 
+  const requestId = req.get('x-request-id') || 'no-request-id';
   const decoded = jwt.decode(dpop, { complete: true });
   if (!decoded || !decoded.header || !decoded.header.jwk) {
     throw new Error('Invalid DPoP header');
@@ -108,6 +110,26 @@ export async function validateDpop(req, access_token = null) {
 
   const jwk = decoded.header.jwk;
   const jkt = getJkt(jwk);
+  const { htu, htm } = decoded.payload || {};
+  const protocol = req.user?.protocol || (req.protocol === 'https' || process.env.NODE_ENV === 'production' ? 'https' : 'http');
+  const host = req.user?.host || req.get('host');
+  const path = (req.originalUrl || req.url).split('?')[0];
+  const expectedHtu = `${protocol}://${host}${path}`;
+
+  console.log('[DPOP] Proof received', {
+    requestId,
+    path,
+    alg: decoded.header.alg,
+    typ: decoded.header.typ,
+    kid: decoded.header.kid || null,
+    jwk_kty: jwk.kty,
+    jwk_crv: jwk.crv || null,
+    htm,
+    htu,
+    expectedHtu,
+    hasAth: Boolean(decoded.payload?.ath),
+    accessTokenBound: Boolean(access_token),
+  });
 
   // Verify DPoP signature using the JWK
   try {
@@ -116,28 +138,42 @@ export async function validateDpop(req, access_token = null) {
       const [headerB64, payloadB64, sigB64] = dpop.split('.');
       const data = Buffer.from(`${headerB64}.${payloadB64}`);
       const signature = Buffer.from(sigB64, 'base64url');
-      const didKey = cryptoAtp.formatDidKey(cryptoAtp.SECP256K1_JWT_ALG, publicKeyBytes);
-      const verified = await cryptoAtp.verifySignature(didKey, data, signature, { jwtAlg: cryptoAtp.SECP256K1_JWT_ALG });
+      const msgHash = createHash('sha256').update(data).digest();
+      // DPoP uses JOSE signatures, so be tolerant of valid high-S secp256k1 signatures.
+      const verified = secp256k1.verify(signature, msgHash, publicKeyBytes, {
+        format: 'compact',
+        lowS: false,
+      });
       if (!verified) throw new Error('DPoP signature verification failed');
+      console.log('[DPOP] secp256k1 signature verified', { requestId, path });
     } else {
       const publicKey = createPublicKey({ key: jwk, format: 'jwk' });
       // jsonwebtoken handles the signature format conversion (raw vs DER) for EC keys
       jwt.verify(dpop, publicKey, { algorithms: ['ES256', 'RS256'] });
+      console.log('[DPOP] JOSE signature verified', {
+        requestId,
+        path,
+        alg: decoded.header.alg,
+        jwk_kty: jwk.kty,
+        jwk_crv: jwk.crv || null,
+      });
     }
   } catch (err) {
+    console.error('[DPOP] Signature verification failed', {
+      requestId,
+      path,
+      alg: decoded.header.alg,
+      jwk_kty: jwk.kty,
+      jwk_crv: jwk.crv || null,
+      message: err.message,
+    });
     throw new Error(`DPoP signature verification failed: ${err.message}`);
   }
 
   // Basic DPoP claim verification
-  const { htu, htm } = decoded.payload;
   if (htm !== req.method) {
     throw new Error('DPoP htm mismatch');
   }
-
-  const protocol = req.user?.protocol || (req.protocol === 'https' || process.env.NODE_ENV === 'production' ? 'https' : 'http');
-  const host = req.user?.host || req.get('host');
-  const path = (req.originalUrl || req.url).split('?')[0];
-  const expectedHtu = `${protocol}://${host}${path}`;
 
   if (htu !== expectedHtu) {
     // Be lenient with trailing slashes
@@ -157,6 +193,7 @@ export async function validateDpop(req, access_token = null) {
     }
   }
 
+  console.log('[DPOP] Proof accepted', { requestId, path, jkt });
   return { jkt, jwk };
 }
 
