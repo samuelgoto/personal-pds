@@ -497,6 +497,23 @@ describe('ATProto OAuth Implementation Tests', () => {
       expect(res.data.repoCommit).toBeDefined();
     });
 
+    test('sync.getBlocks returns a CAR instead of throwing', async () => {
+      const headRes = await axios.get(`${HOST}/xrpc/com.atproto.sync.getHead`);
+      const cid = headRes.data.root;
+
+      const res = await axios.get(`${HOST}/xrpc/com.atproto.sync.getBlocks`, {
+        params: {
+          did: userDid,
+          cids: cid,
+        },
+        responseType: 'arraybuffer',
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/vnd.ipld.car');
+      expect(Buffer.from(res.data).length).toBeGreaterThan(0);
+    });
+
     test('auth failure returns JSON error (not HTML)', async () => {
       // Attempt to access a protected route without a token
       const res = await axios.get(`${HOST}/xrpc/com.atproto.server.getSession`, {

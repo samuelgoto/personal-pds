@@ -824,16 +824,14 @@ app.get('/xrpc/com.atproto.sync.getBlocks', async (req, res) => {
   if (did && pdsDid && did !== pdsDid) return res.status(404).json({ error: 'RepoNotFound' });
 
   const storage = new TursoStorage();
-  const blocks = [];
   const requestedCids = Array.isArray(cids) ? cids : [cids];
-  
-  for (const cidStr of requestedCids) {
-    if (!cidStr) continue;
-    const block = await storage.get(CID.parse(cidStr));
-    if (block) blocks.push(block);
+  const parsedCids = requestedCids.filter(Boolean).map((cidStr) => CID.parse(cidStr));
+  if (parsedCids.length === 0) {
+    return res.status(400).json({ error: 'InvalidRequest', message: 'Missing cids' });
   }
 
-  const car = await blocksToCarFile(CID.parse(requestedCids[0]), blocks);
+  const { blocks } = await storage.getBlocks(parsedCids);
+  const car = await blocksToCarFile(parsedCids[0], blocks);
   res.setHeader('Content-Type', 'application/vnd.ipld.car');
   res.send(Buffer.from(car));
 });
