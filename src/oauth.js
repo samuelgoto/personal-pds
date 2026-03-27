@@ -31,7 +31,7 @@ const clientKeyCache = new Map();
 
 async function signAuthorizationResponseJwt(payload, alg, user) {
   if (alg === 'ES256K') {
-    const header = { typ: 'JWT', alg: 'ES256K' };
+    const header = { typ: 'oauth-authz-resp+jwt', alg: 'ES256K' };
     const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
     const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const data = Buffer.from(`${headerB64}.${payloadB64}`);
@@ -51,9 +51,8 @@ async function signAuthorizationResponseJwt(payload, alg, user) {
 
     return jwt.sign(payload, privateKey, {
       algorithm: 'RS256',
-      noTimestamp: true,
       header: {
-        typ: 'JWT',
+        typ: 'oauth-authz-resp+jwt',
         alg: 'RS256',
         kid: jwk.kid,
       },

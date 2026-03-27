@@ -849,10 +849,12 @@ describe('ATProto OAuth Implementation Tests', () => {
 
       const decoded = jwt.decode(responseJwt, { complete: true });
       expect(decoded.header.alg).toBe('ES256K');
+      expect(decoded.header.typ).toBe('oauth-authz-resp+jwt');
       expect(decoded.payload.iss).toBe(HOST);
       expect(decoded.payload.aud).toBe(client_id);
       expect(decoded.payload.state).toBe('jarm-test');
       expect(decoded.payload.code).toBeDefined();
+      expect(decoded.payload.iat).toBeDefined();
     });
 
     test('JARM: should support RS256 when an RSA signing key is configured', async () => {
@@ -896,9 +898,11 @@ describe('ATProto OAuth Implementation Tests', () => {
 
         const decoded = jwt.decode(responseJwt, { complete: true });
         expect(decoded.header.alg).toBe('RS256');
+        expect(decoded.header.typ).toBe('oauth-authz-resp+jwt');
         expect(decoded.header.kid).toBe(rsaJwk.kid);
         expect(decoded.payload.aud).toBe(client_id);
         expect(decoded.payload.state).toBe('jarm-rs256-supported-test');
+        expect(decoded.payload.iat).toBeDefined();
 
         const verified = jwt.verify(responseJwt, createPublicKey({ key: rsaJwk, format: 'jwk' }), { algorithms: ['RS256'] });
         expect(verified.aud).toBe(client_id);
