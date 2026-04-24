@@ -9,6 +9,42 @@ const PORT = process.env.PORT || 3000;
 
 const RELAY_URL = process.env.RELAY_URL || 'https://bsky.network';
 
+function normalizeHostname(value) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+
+  try {
+    return new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).host;
+  } catch {
+    return trimmed.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  }
+}
+
+async function resolveRelayHostname() {
+  const explicitHost = normalizeHostname(process.env.PDS_HOST || process.env.DOMAIN);
+  if (explicitHost) {
+    return explicitHost;
+  }
+
+  const did = (process.env.PDS_DID || '').trim();
+  if (did.startsWith('did:plc:')) {
+    try {
+      const res = await axios.get(`https://plc.directory/${did}`, { timeout: 5000 });
+      const endpoint = res.data?.service?.find((service) => (
+        service?.id === '#atproto_pds' || service?.type === 'AtprotoPersonalDataServer'
+      ))?.serviceEndpoint;
+      const plcHost = normalizeHostname(endpoint);
+      if (plcHost) {
+        return plcHost;
+      }
+    } catch (err) {
+      console.warn(`Failed to resolve PDS host from PLC for ${did}:`, err.message);
+    }
+  }
+
+  return normalizeHostname(process.env.HANDLE);
+}
+
 async function pingRelay(hostname) {
   console.log(`Pinging relay ${RELAY_URL} to crawl ${hostname}...`);
   await axios.post(`${RELAY_URL}/xrpc/com.atproto.sync.requestCrawl`, { hostname });
@@ -48,7 +84,9 @@ server.listen(PORT, () => {
   console.log(`Minimal PDS listening on port ${PORT}`);
   
   // Proactively ping relay on startup
-  pingRelay(process.env.HANDLE).catch(err => {
-    console.warn('Initial relay ping failed:', err.message);
-  });
+  resolveRelayHostname()
+    .then((hostname) => pingRelay(hostname))
+    .catch(err => {
+      console.warn('Initial relay ping failed:', err.message);
+    });
 });
